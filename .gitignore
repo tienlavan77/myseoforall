@@ -1,0 +1,37 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+
+# PHP dependencies
+/vendor/
+
+# JavaScript dependencies and generated assets
+/node_modules/
+/dist/
+/build/
+/coverage/
+
+# WordPress generated files
+/wp-content/uploads/
+/wp-content/cache/
+
+# IDE and operating-system files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+._.*
+
+# Temporary files
+*.log
+*.tmp
+*.swp
+*~
+
+# Forge runtime state
+.forge/
+.claude
