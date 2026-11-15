@@ -43,7 +43,7 @@ Chưa bắt buộc có toàn bộ giao diện nâng cao cho variation trong MVP.
 
 ## 4. AI Assistant
 
-- Nhà cung cấp đầu tiên: API bên thứ ba thông qua **Anthropic API và SDK chính thức**.
+- Nhà cung cấp mô hình đầu tiên: Anthropic, được gọi qua một gateway bên thứ ba; plugin không gọi trực tiếp endpoint Anthropic. Provider phải dùng contract riêng để có thể thay gateway hoặc nhà cung cấp về sau.
 - AI Assistant giai đoạn đầu hỗ trợ:
   - Phân tích SEO.
   - Đề xuất title/meta.

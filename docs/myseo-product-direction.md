@@ -158,7 +158,7 @@ MVP không bao gồm tự động xuất bản hàng loạt, tự động thay �
 
 Các điểm sau chưa được Project Owner chốt:
 
-1. Nhà cung cấp AI đầu tiên và API nào sẽ được hỗ trợ.
+1. Gateway bên thứ ba đầu tiên dùng để gọi Anthropic và contract/provider configuration tương ứng.
 2. Plugin SEO bên thứ ba đầu tiên cần tích hợp.
 3. Phạm vi sitemap trong MVP.
 4. Cơ chế cấp phép/thương mại của plugin.

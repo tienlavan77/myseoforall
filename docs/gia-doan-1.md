@@ -377,7 +377,7 @@ Cần trả lời được:
 
 Các quyết định sản phẩm chính đã được chốt trong `docs/myseo-owner-decisions.md`. Trước khi implementation vẫn cần chuyển “WordPress/WooCommerce mới hiện tại” thành compatibility matrix cụ thể theo release mục tiêu, đồng thời xác nhận:
 
-- Tên/version cụ thể của Anthropic SDK sẽ dùng.
+- Tên/version cụ thể của gateway bên thứ ba, contract provider và cơ chế xác thực; plugin không gọi trực tiếp endpoint Anthropic.
 - PHP 8.x minor version tối thiểu trong môi trường phát hành.
 - Chính sách retention lịch sử AI trước khi lưu dữ liệu production.
 - Có cần lock migration ở mức database ngay trong phiên bản đầu hay chỉ dùng guard/option state.

@@ -24,14 +24,20 @@ final class Configuration
     {
         $this->values = array_merge(self::defaults(), $values);
         $this->values['schema_version'] = self::SCHEMA_VERSION;
-        $this->values['locale'] = sanitize_key((string) $this->values['locale']);
+        $locale = (string) $this->values['locale'];
+        $this->values['locale'] = function_exists('sanitize_key')
+            ? sanitize_key($locale)
+            : (string) preg_replace('/[^a-zA-Z0-9_]/', '', $locale);
         if ($this->values['locale'] === '') {
             $this->values['locale'] = 'vi_VN';
         }
         $this->values['module_enablement'] = is_array($this->values['module_enablement'])
             ? array_map('boolval', $this->values['module_enablement'])
             : [];
-        $this->values['migration_status'] = sanitize_key((string) $this->values['migration_status']);
+        $migrationStatus = (string) $this->values['migration_status'];
+        $this->values['migration_status'] = function_exists('sanitize_key')
+            ? sanitize_key($migrationStatus)
+            : strtolower($migrationStatus);
     }
 
     /**
