@@ -1,5 +1,0 @@
-{"debug":"Calling MCP tool: delegate_subagent","timestamp":"2026-11-15T11:00:56.189Z","sessionId":"08de99e0-4627-4443-b539-e786e1634482","cwd":"/home/data/sites/sitesdev/blog/wp-content/plugins/myseoforall"}
-{"debug":"Tool 'delegate_subagent' still running (30s elapsed)","timestamp":"2026-11-15T11:01:26.196Z","sessionId":"08de99e0-4627-4443-b539-e786e1634482","cwd":"/home/data/sites/sitesdev/blog/wp-content/plugins/myseoforall"}
-{"debug":"Tool 'delegate_subagent' still running (60s elapsed)","timestamp":"2026-11-15T11:01:56.196Z","sessionId":"08de99e0-4627-4443-b539-e786e1634482","cwd":"/home/data/sites/sitesdev/blog/wp-content/plugins/myseoforall"}
-{"debug":"Tool 'delegate_subagent' still running (90s elapsed)","timestamp":"2026-11-15T11:02:26.196Z","sessionId":"08de99e0-4627-4443-b539-e786e1634482","cwd":"/home/data/sites/sitesdev/blog/wp-content/plugins/myseoforall"}
-{"debug":"Tool 'delegate_subagent' completed successfully in 1m 48s","timestamp":"2026-11-15T11:02:45.077Z","sessionId":"08de99e0-4627-4443-b539-e786e1634482","cwd":"/home/data/sites/sitesdev/blog/wp-content/plugins/myseoforall"}

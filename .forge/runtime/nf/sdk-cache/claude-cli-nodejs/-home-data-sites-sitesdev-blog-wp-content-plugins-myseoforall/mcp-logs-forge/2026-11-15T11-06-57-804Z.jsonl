@@ -1,4 +1,0 @@
-{"debug":"Calling MCP tool: read_subagent_evidence","timestamp":"2026-11-15T11:06:57.830Z","sessionId":"08de99e0-4627-4443-b539-e786e1634482","cwd":"/home/data/sites/sitesdev/blog/wp-content/plugins/myseoforall"}
-{"debug":"Tool 'read_subagent_evidence' completed successfully in 1s","timestamp":"2026-11-15T11:06:58.916Z","sessionId":"08de99e0-4627-4443-b539-e786e1634482","cwd":"/home/data/sites/sitesdev/blog/wp-content/plugins/myseoforall"}
-{"debug":"Calling MCP tool: write_diff","timestamp":"2026-11-15T11:07:56.205Z","sessionId":"08de99e0-4627-4443-b539-e786e1634482","cwd":"/home/data/sites/sitesdev/blog/wp-content/plugins/myseoforall"}
-{"debug":"Tool 'write_diff' completed successfully in 624ms","timestamp":"2026-11-15T11:07:56.825Z","sessionId":"08de99e0-4627-4443-b539-e786e1634482","cwd":"/home/data/sites/sitesdev/blog/wp-content/plugins/myseoforall"}
