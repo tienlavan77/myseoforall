@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forge.local/schemas/project/project-operation.schema.json",
+  "title": "Forge Project Operation",
+  "description": "Durable lifecycle operation record for creating or adding a managed project: binds request intent, attempt fencing, validated stage progression and final outcome so restart recovery can reconcile against the catalog without replaying committed work or trusting stale snapshots.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "operation_id", "request_key", "request_fingerprint", "kind", "root",
+    "attempt", "revision", "stage", "status", "counters", "timestamps"
+  ],
+  "properties": {
+    "progress": {"title":"Committed project index progress","description":"Attempt progress separates committed outcomes, parser-specific function inventory, readiness and embedding work at an explicit index version.","type":"object","additionalProperties":false,"required":["attempt","revision","stage","status","stages","progress","counters","failures","checkpoint","embedding","function_kinds"],"properties":{"attempt":{"type":"integer","minimum":1},"revision":{"type":"integer","minimum":0},"stage":{"enum":["preflight","identity","membership","comment_normalization","scan/index","resolve","embedding","startup/readiness"]},"status":{"enum":["running","succeeded","failed"]},"stages":{"type":"object","additionalProperties":false,"required":["preflight","identity","membership","comment_normalization","scan/index","resolve","embedding","startup/readiness"],"properties":{"preflight":{"enum":["pending","running","completed","failed"]},"identity":{"enum":["pending","running","completed","failed"]},"membership":{"enum":["pending","running","completed","failed"]},"comment_normalization":{"enum":["pending","running","completed","failed"]},"scan/index":{"enum":["pending","running","completed","failed"]},"resolve":{"enum":["pending","running","completed","failed"]},"embedding":{"enum":["pending","running","completed","failed"]},"startup/readiness":{"enum":["pending","running","completed","failed"]}}},"progress":{"type":"object","additionalProperties":false,"required":["mode","total","percent","eta"],"properties":{"mode":{"const":"indeterminate"},"total":{"type":"null"},"percent":{"type":"null"},"eta":{"type":"null"}}},"counters":{"type":"object","additionalProperties":false,"required":["discovered","eligible","indexed","unchanged","unsupported","ignored","failed","deleted"],"properties":{"discovered":{"type":"integer","minimum":0},"eligible":{"type":"integer","minimum":0},"indexed":{"type":"integer","minimum":0},"unchanged":{"type":"integer","minimum":0},"unsupported":{"type":"integer","minimum":0},"ignored":{"type":"integer","minimum":0},"failed":{"type":"integer","minimum":0},"deleted":{"type":"integer","minimum":0}}},"failures":{"type":"array","items":{"type":"object","required":["path","marker","message"],"properties":{"path":{"type":"string"},"marker":{"type":"string"},"message":{"type":"string"}}}},"checkpoint":{"anyOf":[{"type":"null"},{"type":"object","additionalProperties":false,"required":["version","files","functions"],"properties":{"version":{"type":"integer","minimum":0},"files":{"type":"integer","minimum":0},"functions":{"type":"integer","minimum":0}}}]},"embedding":{"type":"object","additionalProperties":false,"required":["status","pending","processing","succeeded","failed"],"properties":{"status":{"enum":["pending","running","succeeded","failed"]},"error":{"type":"string"},"pending":{"type":"integer","minimum":0},"processing":{"type":"integer","minimum":0},"succeeded":{"type":"integer","minimum":0},"failed":{"type":"integer","minimum":0}}},"function_kinds":{"const":{"javascript":["function","method","hook","component"],"typescript":["function","method","hook","component"],"php":["function","method"],"css":[]}}}},
+    "operation_id": {
+      "type": "string",
+      "pattern": "^OPRO-[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "request_key": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "request_fingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "kind": { "type": "string", "enum": ["create", "add"] },
+    "root": { "type": "string", "minLength": 1 },
+    "project_id": {
+      "type": "string",
+      "pattern": "^(?:PROJECT-[A-Za-z0-9_-]+|[a-z0-9]+(?:-[a-z0-9]+)*)$",
+      "description": "Stable project identity, present only once it has been resolved."
+    },
+    "attempt": { "type": "integer", "minimum": 0 },
+    "revision": { "type": "integer", "minimum": 0 },
+    "stage": { "type": "string", "enum": ["intended", "attempted", "committed", "settled", "abandoned"] },
+    "status": { "type": "string", "enum": ["pending", "running", "succeeded", "failed", "cancelled"] },
+    "counters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transitions", "attempts"],
+      "properties": {
+        "transitions": { "type": "integer", "minimum": 0 },
+        "attempts": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "timestamps": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["created_at", "updated_at"],
+      "properties": {
+        "created_at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$" },
+        "updated_at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$" },
+        "settled_at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$" }
+      }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["outcome"],
+      "properties": {
+        "outcome": { "type": "string", "enum": ["succeeded", "failed", "cancelled"] },
+        "project_id": { "type": "string", "pattern": "^(?:PROJECT-[A-Za-z0-9_-]+|[a-z0-9]+(?:-[a-z0-9]+)*)$" },
+        "root": { "type": "string", "minLength": 1 }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 },
+        "recorded_at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$" }
+      }
+    }
+  }
+}

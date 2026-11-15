@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forge.local/schemas/agent/tools/search-code-result.schema.json",
+  "title": "Forge search code tool result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["task_id", "query", "kind", "index_version", "matches"],
+  "properties": {
+    "task_id": { "type": "string", "minLength": 1 },
+    "query": { "type": "string" },
+    "kind": { "type": "string", "enum": ["file", "symbol", "content"] },
+    "hint": { "type": "string" },
+    "deadline_warning": { "type": "string" },
+    "discovery_budget": { "type": "object" },
+    "projection": { "type": "string", "enum": ["minimal", "summary", "graph"] },
+    "index_version": { "type": ["string", "null"] },
+    "matches": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object", "additionalProperties": false,
+            "required": ["kind", "path", "language", "sha256", "size_bytes", "score", "reason"],
+            "properties": {
+              "kind": { "const": "file" }, "path": { "type": "string", "minLength": 1 },
+              "language": { "type": ["string", "null"] }, "sha256": { "type": ["string", "null"] },
+              "size_bytes": { "type": ["integer", "null"], "minimum": 0 }, "score": { "type": "number" },
+              "reason": { "type": "array", "items": { "type": "string" } },
+              "snippet": { "type": ["string", "null"] },
+              "symbols": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["name", "kind", "start_line", "end_line"], "properties": { "name": { "type": "string" }, "kind": { "type": "string" }, "start_line": { "type": ["integer", "null"] }, "end_line": { "type": ["integer", "null"] } } } },
+              "graph": { "type": "object", "additionalProperties": true },
+              "indexed_sha256": { "type": ["string", "null"], "pattern": "^sha256:[a-fA-F0-9]{64}$" },
+              "content_sha256": { "type": ["string", "null"], "pattern": "^sha256:[a-fA-F0-9]{64}$" },
+              "index_status": { "type": "string", "enum": ["fresh", "stale", "unavailable"] }
+            }
+          },
+          {
+            "type": "object", "additionalProperties": false,
+            "required": ["kind", "path", "score", "reason"],
+            "properties": {
+              "kind": { "const": "content" }, "path": { "type": "string", "minLength": 1 },
+              "language": { "type": ["string", "null"] }, "sha256": { "type": ["string", "null"] },
+              "size_bytes": { "type": ["integer", "null"], "minimum": 0 }, "score": { "type": "number" },
+              "reason": { "type": "array", "items": { "type": "string" } },
+              "snippet": { "type": ["string", "null"] },
+              "symbol_name": { "type": "string", "minLength": 1 },
+              "symbol_kind": { "type": "string" },
+              "start_line": { "type": ["integer", "null"], "minimum": 1 },
+              "end_line": { "type": ["integer", "null"], "minimum": 1 },
+              "indexed_sha256": { "type": ["string", "null"], "pattern": "^sha256:[a-fA-F0-9]{64}$" },
+              "content_sha256": { "type": ["string", "null"], "pattern": "^sha256:[a-fA-F0-9]{64}$" },
+              "index_status": { "type": "string", "enum": ["fresh", "stale", "unavailable"] }
+            }
+          },
+          {
+            "type": "object", "additionalProperties": false,
+            "required": ["kind", "path", "name", "symbol_kind", "score", "reason"],
+            "properties": {
+              "kind": { "const": "symbol" }, "path": { "type": "string", "minLength": 1 },
+              "name": { "type": "string", "minLength": 1 }, "symbol_kind": { "type": "string" },
+              "start_line": { "type": ["integer", "null"], "minimum": 1 }, "end_line": { "type": ["integer", "null"], "minimum": 1 },
+              "score": { "type": "number" }, "reason": { "type": "array", "items": { "type": "string" } },
+              "language": { "type": ["string", "null"] }, "sha256": { "type": ["string", "null"] }, "size_bytes": { "type": ["integer", "null"], "minimum": 0 },
+              "indexed_sha256": { "type": ["string", "null"], "pattern": "^sha256:[a-fA-F0-9]{64}$" },
+              "content_sha256": { "type": ["string", "null"], "pattern": "^sha256:[a-fA-F0-9]{64}$" },
+              "index_status": { "type": "string", "enum": ["fresh", "stale", "unavailable"] }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

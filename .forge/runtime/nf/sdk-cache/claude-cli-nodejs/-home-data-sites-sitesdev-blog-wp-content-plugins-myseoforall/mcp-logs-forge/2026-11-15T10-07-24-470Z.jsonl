@@ -1,0 +1,6 @@
+{"debug":"Calling MCP tool: read_subagent_evidence","timestamp":"2026-11-15T10:07:24.489Z","sessionId":"08de99e0-4627-4443-b539-e786e1634482","cwd":"/home/data/sites/sitesdev/blog/wp-content/plugins/myseoforall"}
+{"debug":"Tool 'read_subagent_evidence' completed successfully in 261ms","timestamp":"2026-11-15T10:07:24.731Z","sessionId":"08de99e0-4627-4443-b539-e786e1634482","cwd":"/home/data/sites/sitesdev/blog/wp-content/plugins/myseoforall"}
+{"debug":"Calling MCP tool: Read","timestamp":"2026-11-15T10:07:30.594Z","sessionId":"08de99e0-4627-4443-b539-e786e1634482","cwd":"/home/data/sites/sitesdev/blog/wp-content/plugins/myseoforall"}
+{"debug":"Tool 'Read' completed successfully in 268ms","timestamp":"2026-11-15T10:07:30.862Z","sessionId":"08de99e0-4627-4443-b539-e786e1634482","cwd":"/home/data/sites/sitesdev/blog/wp-content/plugins/myseoforall"}
+{"debug":"Calling MCP tool: write_diff","timestamp":"2026-11-15T10:08:37.240Z","sessionId":"08de99e0-4627-4443-b539-e786e1634482","cwd":"/home/data/sites/sitesdev/blog/wp-content/plugins/myseoforall"}
+{"debug":"Tool 'write_diff' completed successfully in 242ms","timestamp":"2026-11-15T10:08:37.483Z","sessionId":"08de99e0-4627-4443-b539-e786e1634482","cwd":"/home/data/sites/sitesdev/blog/wp-content/plugins/myseoforall"}

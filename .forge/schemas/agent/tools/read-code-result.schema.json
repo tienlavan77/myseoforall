@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forge.local/schemas/agent/tools/read-code-result.schema.json",
+  "title": "Forge read code tool result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["task_id", "kind", "path", "content", "language", "sha256", "size_bytes", "truncated"],
+  "properties": {
+    "task_id": { "type": "string", "minLength": 1 },
+    "kind": { "type": "string", "enum": ["file", "symbol"] },
+    "path": { "type": "string", "minLength": 1 },
+    "content": { "type": "string" },
+    "language": { "type": ["string", "null"] },
+    "sha256": { "type": ["string", "null"] },
+    "size_bytes": { "type": "integer", "minimum": 0 },
+    "truncated": { "type": "boolean" },
+    "cache": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "cached_at", "expires_at"],
+      "properties": {
+        "status": { "type": "string", "enum": ["hit", "miss", "bypass"] },
+        "cached_at": { "type": ["string", "null"], "format": "date-time" },
+        "expires_at": { "type": ["string", "null"], "format": "date-time" }
+      }
+    },
+    "content_sha256": { "type": ["string", "null"], "pattern": "^sha256:[a-fA-F0-9]{64}$" },
+    "indexed_sha256": { "type": ["string", "null"], "pattern": "^sha256:[a-fA-F0-9]{64}$" },
+    "index_status": { "type": "string", "enum": ["fresh", "stale", "unavailable"] },
+    "index_version": { "type": ["string", "integer", "null"] },
+    "discovery_budget": { "type": "object" },
+    "symbol": { "type": "string", "minLength": 1 },
+    "symbol_kind": { "type": "string", "minLength": 1 },
+    "start_line": { "type": "integer", "minimum": 1 },
+    "end_line": { "type": "integer", "minimum": 1 }
+  },
+  "allOf": [
+    { "if": { "properties": { "kind": { "const": "symbol" } } }, "then": { "required": ["symbol", "symbol_kind", "start_line", "end_line"] } },
+    { "if": { "properties": { "kind": { "const": "file" } } }, "then": { "not": { "required": ["symbol", "symbol_kind", "start_line", "end_line"] } } }
+  ]
+}
