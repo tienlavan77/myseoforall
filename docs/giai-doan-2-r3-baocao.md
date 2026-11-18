@@ -8,7 +8,7 @@ Ngày: 18/11/2026 (UTC). Người nhận: chủ dự án MySeoForAll.
 
 R3 chỉ giao Increment A ở bước này. Các hướng dẫn B–E là công việc tiếp theo; F–H tiếp tục giữ gate. Thay đổi lần này không thêm network client, lưu secret, lưu request/response, Preview/Apply hoặc ghi dữ liệu WordPress/WooCommerce.
 
-Mốc đối chiếu Git: nhánh `main`, HEAD `4cbd16da17bee2e7b464dca48d01d1b438c71ac2`. Code được bàn giao ở working tree, chưa commit/push. Các checksum tại mục 7 xác định nội dung mới; HEAD riêng lẻ không chứa các thay đổi này.
+Code Increment A, tests và báo cáo đã được commit trên nhánh `main` tại `358b745769ec99bf2a557de547a147546d14514e`; working tree sạch ngay sau commit. Receipt hậu commit tại mục 11 gắn với revision này. Chưa push. Các mục 4 và 8–10 lưu lịch sử trước commit; trạng thái mới nhất ở mục 11.
 
 ## 2. Thay đổi đã làm
 
@@ -121,7 +121,7 @@ PHPUnit cập nhật `.phpunit.result.cache`. Forge từ chối dọn thay đổ
 | Provenance/canonical deterministic | `testCanonicalAndProvenanceAreDeterministic`: thứ tự ưu tiên, winner source, đảo thứ tự source input, nhãn/field sai. |
 | Provider dùng boundary chung | Fake provider gọi `validatePayload`; positive provider fixtures đi qua builder; negative cases cố ý gửi raw/tampered payload để kiểm tra reject. |
 | Không thêm network/storage/Apply | Các source thay đổi chỉ build/validate/copy và tạo output offline; không thêm runtime hook hoặc writer. |
-| Exit gate độc lập có checksum/revision | Có contract-test class và receipt `run_check` hợp lệ `VERIFY-RUN-e4449e3b-6da8-4040-8114-699b33629e68`; status passed, exit code 0, trên snapshot commit `4cbd16da17bee2e7b464dca48d01d1b438c71ac2`. |
+| Exit gate độc lập có checksum/revision | Có contract-test class và receipt hậu commit `VERIFY-RUN-acaa5a4b-680d-4ddb-a2f7-7d3bfd7cedca`; status passed, exit code 0, commit `358b745769ec99bf2a557de547a147546d14514e`. Privacy và production gate tại mục 6 vẫn giữ nguyên. |
 
 ## 6. Giới hạn và phần còn lại
 
@@ -130,13 +130,13 @@ PHPUnit cập nhật `.phpunit.result.cache`. Forge từ chối dọn thay đổ
 - Chưa wire provider boundary vào runtime/network; dù đã có verification receipt hợp lệ, vẫn cần giải quyết privacy policy cho văn bản tự do và các điều kiện production trước khi xét mở network gate.
 - Increment B: shared AI output schema/validator và error/status contract; C: local analyzer semantics; D: Rank Math read adapter/compatibility/coexistence; E: runtime wiring/health evidence — vẫn là công việc tiếp theo theo R3.
 - Increment F–H: settings/secrets, gateway/network và Preview/Apply tiếp tục giữ gate. Không triển khai ownership transfer hoặc auto-publish trong đợt này.
-- Không commit/push; báo cáo và code sẵn để chủ dự án kiểm tra. Cần chạy lại focused suite qua `run_check` khi Forge hỗ trợ lệnh PHPUnit phù hợp để hoàn tất bằng chứng nghiệm thu.
+- Đã commit code/tests/report tại `358b745769ec99bf2a557de547a147546d14514e` và chạy `run_check` hậu commit thành công; chưa push. `.phpunit.result.cache` cũng nằm trong commit vì Forge chặn restore/stash trên `main`; cache không phải bằng chứng nghiệm thu.
 
 ## 7. Checksum bàn giao
 
 Tài liệu kế hoạch: `docs/giai-doan-2-r3.md`, SHA-256 `ddf972458b4b7db24120df919088f04718bf7d4def8c6e421a721acca4311c77`.
 
-Các checksum sau là nội dung working tree đã được Forge xác nhận sau lần PHPUnit nói trên:
+Các checksum sau xác định source/test Increment A đã được Forge xác nhận và đưa vào commit `358b745769ec99bf2a557de547a147546d14514e`:
 
 | File | SHA-256 |
 | --- | --- |
@@ -231,10 +231,10 @@ Báo cáo được cập nhật để phân biệt rõ: các lần thử trướ
 
 - Status: **passed**; exit code: **0**.
 - PHPUnit scope: toàn bộ `tests/Unit`.
-- Run ID: `VERIFY-RUN-e4449e3b-6da8-4040-8114-699b33629e68`.
-- Evaluated at: `2026-11-18T23:30:10.434Z`.
-- Commit snapshot: `4cbd16da17bee2e7b464dca48d01d1b438c71ac2`; base SHA: `caa2c0f2092880afd785429cd4e62890d6226580`.
+- Run ID hậu commit: `VERIFY-RUN-acaa5a4b-680d-4ddb-a2f7-7d3bfd7cedca`.
+- Evaluated at: `2026-11-18T23:50:52.128Z`.
+- Commit snapshot: `358b745769ec99bf2a557de547a147546d14514e`; base SHA: `4cbd16da17bee2e7b464dca48d01d1b438c71ac2`.
 
-Receipt này là verification receipt hợp lệ cho unit suite và lệnh đã thực thi thành công trên snapshot Forge ghi nhận. Forge cũng trả `changed_paths` bao gồm các file Increment A, nhưng `git_status` vẫn xác nhận HEAD `4cbd16da17bee2e7b464dca48d01d1b438c71ac2` chưa chứa các thay đổi: code vẫn ở working tree, chưa commit/push. Vì vậy receipt đóng blocker “thiếu receipt run_check”, nhưng không biến working tree thành revision immutable hoặc chứng minh code đã được commit.
+Receipt hậu commit xác nhận lệnh thành công trên revision cố định chứa code Increment A. Hai blocker kỹ thuật “thiếu receipt PHPUnit qua run_check” và “code chưa nằm trong HEAD” đã được xử lý. Lượt cập nhật tài liệu tiếp theo chỉ ghi lại commit/receipt này; không sửa source/test và chưa push. Forge không trả số tests/assertions trong receipt, nên không gán số liệu lịch sử cho lần chạy này.
 
 Receipt không chứng minh production migration, runtime compatibility với WordPress/WooCommerce, semantic PII completeness hoặc readiness cho network/Apply.
