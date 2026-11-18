@@ -31,11 +31,12 @@ final class AiProviderTest extends TestCase
         $request = [
             'schema_version' => AiProvider::REQUEST_SCHEMA,
             'task' => 'title_meta_suggestion',
-            'context' => [
+            'context' => (new \MySeoForAll\SEO\Context\ProviderPayloadBuilder())->build([
                 'title' => 'A useful title',
+                'content' => 'Body',
                 'meta_description' => 'A useful summary',
                 'images' => [],
-            ],
+            ], 'article'),
         ];
         $original = $request;
         $provider = new FakeAiProvider();
@@ -95,10 +96,10 @@ final class AiProviderTest extends TestCase
         $response = (new FakeAiProvider())->generate([
             'schema_version' => AiProvider::REQUEST_SCHEMA,
             'task' => 'product_description_draft',
-            'context' => [
+            'context' => (new \MySeoForAll\SEO\Context\ProviderPayloadBuilder())->build([
                 'product_name' => 'Widget',
                 'short_description' => 'Compact widget',
-            ],
+            ], 'product'),
         ]);
 
         self::assertSame('Compact widget', $response['output']['description']);
@@ -114,12 +115,12 @@ final class AiProviderTest extends TestCase
         $analysis = $provider->generate([
             'schema_version' => AiProvider::REQUEST_SCHEMA,
             'task' => 'seo_analysis',
-            'context' => ['content' => 'Body'],
+            'context' => (new \MySeoForAll\SEO\Context\ProviderPayloadBuilder())->build(['title' => 'Article', 'content' => 'Body'], 'article'),
         ]);
         $suggestion = $provider->generate([
             'schema_version' => AiProvider::REQUEST_SCHEMA,
             'task' => 'title_meta_suggestion',
-            'context' => ['title' => 'Title'],
+            'context' => (new \MySeoForAll\SEO\Context\ProviderPayloadBuilder())->build(['title' => 'Title', 'content' => 'Body'], 'page'),
         ]);
 
         self::assertSame([], $analysis['output']['findings']);

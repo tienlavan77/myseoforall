@@ -91,11 +91,11 @@ final class SeoCoreTest extends TestCase
         $builder = new \MySeoForAll\SEO\Context\ProviderPayloadBuilder();
         $payload = $builder->build([
             'title' => 'Safe title',
+            'content' => 'Body',
             'images' => [['src' => 'image.jpg', 'alt' => 'Safe image']],
-            'provenance' => ['source' => 'wordpress', 'field' => 'title'],
         ], 'article');
 
-        self::assertSame('provider-payload-1', $payload['schema_version']);
+        self::assertSame('provider-payload-2', $payload['schema_version']);
         self::assertSame('Safe title', $payload['title']);
 
         $this->expectException(\InvalidArgumentException::class);
@@ -147,16 +147,14 @@ final class SeoCoreTest extends TestCase
             'article' => ['title' => 'Article', 'content' => 'Body'],
             'page' => ['title' => 'Page', 'content' => 'Body'],
             'product' => ['product_name' => 'Widget', 'price' => '10.00'],
-            'variation' => ['product_name' => 'Widget blue', 'variation' => ['id' => 'v-1', 'sku' => 'BLUE']],
+            'variation' => ['product_name' => 'Widget blue', 'variation' => ['id' => 2, 'parent_id' => 1, 'sku' => 'BLUE']],
         ];
 
         foreach ($fixtures as $type => $source) {
-            $payload = $builder->build($source, $type, ['title' => 'wordpress', 'canonical' => 'rank_math']);
+            $payload = $builder->build($source, $type);
             self::assertSame($type, $payload['type']);
-            self::assertSame([
-                ['field' => 'canonical', 'source' => 'rank_math'],
-                ['field' => 'title', 'source' => 'wordpress'],
-            ], $payload['provenance']);
+            self::assertNotEmpty($payload['provenance']);
+            $builder->validatePayload($payload);
         }
     }
 

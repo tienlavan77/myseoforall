@@ -22,22 +22,6 @@ final class FakeAiProvider implements AiProvider
         'product_description_draft',
     ];
 
-    private const CONTEXT_FIELDS = [
-        'title',
-        'meta_description',
-        'content',
-        'url',
-        'canonical',
-        'headings',
-        'images',
-        'internal_links',
-        'type',
-        'language',
-        'product_name',
-        'short_description',
-        'description',
-    ];
-
     /**
      * Identify the offline provider so callers can expose its status without network behavior.
      */
@@ -90,60 +74,7 @@ final class FakeAiProvider implements AiProvider
         if (!is_array($request['context'])) {
             throw new \InvalidArgumentException('Provider context must be an array.');
         }
-        (new \MySeoForAll\SEO\Context\ProviderPayloadBuilder())->build($request['context'], 'generic');
-        $this->validateContext($request['context']);
-    }
-
-    /**
-     * Enforce the provider privacy allowlist recursively while preserving scalar context values.
-     *
-     * @param array<string,mixed> $context
-     */
-    private function validateContext(array $context): void
-    {
-        foreach ($context as $key => $value) {
-            if (!is_string($key) || !in_array($key, self::CONTEXT_FIELDS, true)) {
-                throw new \InvalidArgumentException('Provider context contains a forbidden field.');
-            }
-            if (in_array($key, ['headings', 'images', 'internal_links'], true)) {
-                $this->validateList($key, $value);
-                continue;
-            }
-            if (!is_scalar($value) && $value !== null) {
-                throw new \InvalidArgumentException('Provider context contains an invalid value type.');
-            }
-        }
-    }
-
-    /**
-     * Validate structured lists using a narrow item-specific allowlist with no arbitrary nesting.
-     *
-     * @param mixed $value
-     */
-    private function validateList(string $field, mixed $value): void
-    {
-        if (!is_array($value)) {
-            throw new \InvalidArgumentException('Provider structured context must be a list.');
-        }
-        $keys = array_keys($value);
-        if ($keys !== [] && $keys !== range(0, count($value) - 1)) {
-            throw new \InvalidArgumentException('Provider structured context must be a list.');
-        }
-        $allowed = match ($field) {
-            'headings' => ['level', 'text'],
-            'images' => ['src', 'alt'],
-            'internal_links' => ['url', 'anchor'],
-        };
-        foreach ($value as $item) {
-            if (!is_array($item) || array_diff(array_keys($item), $allowed) !== []) {
-                throw new \InvalidArgumentException('Provider structured context contains a forbidden nested field.');
-            }
-            foreach ($item as $itemValue) {
-                if (!is_scalar($itemValue) && $itemValue !== null) {
-                    throw new \InvalidArgumentException('Provider structured context contains an invalid nested value.');
-                }
-            }
-        }
+        (new \MySeoForAll\SEO\Context\ProviderPayloadBuilder())->validatePayload($request['context']);
     }
 
     /** Validate task-specific output fields before exposing the offline response to callers. */

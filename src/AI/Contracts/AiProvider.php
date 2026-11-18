@@ -16,7 +16,7 @@ namespace MySeoForAll\AI\Contracts;
  */
 interface AiProvider
 {
-    public const REQUEST_SCHEMA = 'myseo.ai.request.v1';
+    public const REQUEST_SCHEMA = 'myseo.ai.request.v2';
     public const RESPONSE_SCHEMA = 'myseo.ai.response.v1';
 
     /**
@@ -26,6 +26,7 @@ interface AiProvider
 
     /**
      * Generate a deterministic response for a validated provider request.
+     * Request v2 requires context built by ProviderPayloadBuilder with provider-payload-2.
      *
      * @param array{schema_version:string,task:string,context:array<string,mixed>} $request
      * @return array{schema_version:string,provider:string,task:string,status:string,output:array<string,mixed>}

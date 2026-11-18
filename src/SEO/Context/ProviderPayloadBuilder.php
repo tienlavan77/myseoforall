@@ -10,199 +10,111 @@ namespace MySeoForAll\SEO\Context;
 // Defines ProviderPayloadBuilder class behavior for ProviderPayloadBuilder.php.
 final class ProviderPayloadBuilder
 {
-    public const SCHEMA_VERSION = 'provider-payload-1';
-    private const MAX_DEPTH = 3;
-    private const MAX_BYTES = 12000;
-    private const MAX_STRING_LENGTH = 2000;
-    private const MAX_LIST_ITEMS = 50;
+    public const SCHEMA_VERSION = 'provider-payload-2';
+    private const SOURCES = ['wordpress', 'woocommerce', 'rank_math', 'editor'];
 
-    /** Normalize an allowlisted context and reject unknown fields, unsafe nesting, or oversized values. */
     /**
      * @param array<string, mixed> $source
      * @param array<string, string> $provenance Field-to-source labels.
      * @return array<string, mixed>
      */
-    public function build(array $source, string $type = 'generic', array $provenance = []): array
+    public function build(array $source, string $type = 'article', array $provenance = []): array
     {
-        $type = trim($type);
-        if (!in_array($type, ['generic', 'article', 'page', 'product', 'variation'], true)) {
-            throw new \InvalidArgumentException('Unsupported provider payload type.');
-        }
-        if (array_key_exists('type', $source)) {
-            throw new \InvalidArgumentException('Provider payload resource type is controlled by the builder.');
-        }
-
-        $this->validateResourceShape($source, $type);
-
-        $payload = [
-            'schema_version' => self::SCHEMA_VERSION,
-            'type' => $type,
-        ];
-
-        foreach ($source as $key => $value) {
-            if (!is_string($key) || !$this->isAllowedField($key)) {
-                throw new \InvalidArgumentException('Provider payload contains a forbidden field.');
+        $rules = new ProviderPayloadRules();
+        $schema = ProviderPayloadSchema::forType($type);
+        $rules->inspect($source);
+        $rules->inspect($provenance);
+        $rules->checkBytes($source);
+        $data = $rules->copy($source, $schema);
+        $this->validateRelationship($data, $type);
+        $labels = $this->normalizeProvenance($provenance, $data, $type);
+        foreach (['seo.canonical', 'canonical', 'url'] as $candidate) {
+            $value = $candidate === 'seo.canonical' ? ($data['seo']['canonical'] ?? '') : ($data[$candidate] ?? '');
+            if ($value !== '') {
+                $data['canonical'] = $value;
+                $labels['canonical'] = $labels[$candidate];
+                break;
             }
-            $payload[$key] = $this->normalizeField($key, $value, 0);
         }
-
-        if ($provenance !== []) {
-            $payload['provenance'] = $this->normalizeProvenance($provenance);
+        ksort($data);
+        $payload = ['schema_version' => self::SCHEMA_VERSION, 'type' => $type] + $data;
+        ksort($labels);
+        $payload['provenance'] = [];
+        foreach ($labels as $field => $label) {
+            $payload['provenance'][] = ['field' => $field, 'source' => $label];
         }
-
-        $encoded = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-        if (!is_string($encoded) || strlen($encoded) > self::MAX_BYTES) {
-            throw new \InvalidArgumentException('Provider payload exceeds the configured size limit.');
-        }
-
+        $rules->checkBytes($payload);
         return $payload;
     }
 
-    /** Determine whether a top-level field belongs to the shared provider payload contract. */
-    private function isAllowedField(string $field): bool
+    /**
+     * Validate a built payload at the provider boundary by rebuilding the same closed contract.
+     * Metadata cannot bypass field validation, limits, provenance, or canonical precedence.
+     */
+    public function validatePayload(array $payload): void
     {
-        return in_array($field, [
-            'id', 'title', 'content', 'excerpt', 'meta_description', 'url', 'canonical',
-            'images', 'categories', 'tags', 'attributes', 'sku', 'price', 'stock',
-            'offer', 'variation', 'internal_links', 'headings', 'seo', 'type',
-            'language', 'product_name', 'short_description', 'description', 'source',
-            'provenance',
-        ], true);
+        (new ProviderPayloadRules())->inspect($payload);
+        if (($payload['schema_version'] ?? null) !== self::SCHEMA_VERSION
+            || !is_string($payload['type'] ?? null) || !is_array($payload['provenance'] ?? null)) {
+            throw new \InvalidArgumentException('Provider requires a built typed payload.');
+        }
+        $rows = $payload['provenance'];
+        if ($rows !== [] && array_keys($rows) !== range(0, count($rows) - 1)) {
+            throw new \InvalidArgumentException('Provider provenance must be a list.');
+        }
+        $labels = [];
+        foreach ($rows as $row) {
+            if (!is_array($row) || array_keys($row) !== ['field', 'source']
+                || !is_string($row['field']) || !is_string($row['source'])
+                || array_key_exists($row['field'], $labels)) {
+                throw new \InvalidArgumentException('Provider provenance is malformed.');
+            }
+            $labels[$row['field']] = $row['source'];
+        }
+        $source = $payload;
+        unset($source['schema_version'], $source['type'], $source['provenance']);
+        if ($this->build($source, $payload['type'], $labels) !== $payload) {
+            throw new \InvalidArgumentException('Provider payload is not in canonical built form.');
+        }
     }
 
-    /**
-     * Validate resource-specific scalar and relationship semantics before normalization.
-     *
-     * @param array<string, mixed> $source
-     */
-    private function validateResourceShape(array $source, string $type): void
+    /** Require a variation to identify a different parent and keep its own identifiers consistent. */
+    private function validateRelationship(array $data, string $type): void
     {
-        $stringFields = [
-            'id', 'title', 'content', 'excerpt', 'meta_description', 'url', 'canonical',
-            'sku', 'language', 'product_name', 'short_description', 'description',
-        ];
-        foreach ($stringFields as $field) {
-            if (array_key_exists($field, $source) && !is_string($source[$field]) && !is_int($source[$field])) {
-                throw new \InvalidArgumentException("Provider field {$field} must be text-like.");
-            }
+        if ($type !== 'variation') {
+            return;
         }
-        foreach (['images', 'categories', 'tags', 'attributes', 'internal_links', 'headings'] as $field) {
-            if (array_key_exists($field, $source) && !is_array($source[$field])) {
-                throw new \InvalidArgumentException("Provider field {$field} must be a list or object.");
-            }
-        }
-        foreach (['price', 'stock'] as $field) {
-            if (array_key_exists($field, $source) && !is_int($source[$field]) && !is_float($source[$field]) && !is_string($source[$field])) {
-                throw new \InvalidArgumentException("Provider field {$field} has an invalid scalar type.");
-            }
-        }
-        if ($type === 'variation' && array_key_exists('variation', $source) && !is_array($source['variation'])) {
-            throw new \InvalidArgumentException('Variation relationship must be structured data.');
-        }
-        if (in_array($type, ['product', 'variation'], true)
-            && array_key_exists('product_name', $source)
-            && trim((string) $source['product_name']) === '') {
-            throw new \InvalidArgumentException('Product resource name cannot be empty.');
+        $variation = $data['variation'];
+        if ($variation['id'] === $variation['parent_id']
+            || (isset($data['id']) && $data['id'] !== $variation['id'])
+            || (isset($data['sku'], $variation['sku']) && $data['sku'] !== $variation['sku'])) {
+            throw new \InvalidArgumentException('Provider variation relationship is inconsistent.');
         }
     }
 
     /**
-     * Normalize field provenance deterministically and expose no arbitrary nested data.
-     *
-     * @param array<string, string> $provenance
-     * @return list<array{field:string,source:string}>
+     * Bind provenance only to fields present in the validated source with approved source labels.
+     * Default labels describe editorial or commerce data; SEO overrides retain their own source.
      */
-    private function normalizeProvenance(array $provenance): array
+    private function normalizeProvenance(array $provenance, array $data, string $type): array
     {
-        ksort($provenance);
-        $result = [];
-        foreach ($provenance as $field => $source) {
-            if (!is_string($field) || !is_string($source) || trim($field) === '' || trim($source) === '') {
-                throw new \InvalidArgumentException('Provider provenance must contain non-empty strings.');
-            }
-            if (in_array(strtolower($source), ['api_key', 'token', 'secret', 'customer', 'order'], true)) {
-                throw new \InvalidArgumentException('Provider provenance contains a forbidden sensitive source.');
-            }
-            $result[] = ['field' => $field, 'source' => $source];
-        }
-        return $result;
-    }
-
-    /** Normalize one field while enforcing scalar types, depth, text length, and list limits. */
-    private function normalizeField(string $field, mixed $value, int $depth): mixed
-    {
-        if ($depth > self::MAX_DEPTH) {
-            throw new \InvalidArgumentException('Provider payload exceeds the nesting limit.');
-        }
-        if (is_string($value)) {
-            if (strlen($value) > self::MAX_STRING_LENGTH) {
-                throw new \InvalidArgumentException('Provider payload contains an oversized text value.');
-            }
-            return $value;
-        }
-        if (is_int($value) || is_float($value) || is_bool($value) || $value === null) {
-            return $value;
-        }
-        if (!is_array($value)) {
-            throw new \InvalidArgumentException('Provider payload contains an unsupported value type.');
-        }
-
-        if (count($value) > self::MAX_LIST_ITEMS) {
-            throw new \InvalidArgumentException('Provider payload contains too many list items.');
-        }
-        if ($this->isList($value)) {
-            return $this->normalizeList($field, $value, $depth + 1);
-        }
-
-        $allowed = $this->nestedFields($field);
-        if ($allowed === []) {
-            throw new \InvalidArgumentException('Provider payload contains an arbitrary nested object.');
-        }
-        $result = [];
-        foreach ($value as $key => $item) {
-            if (!is_string($key) || !in_array($key, $allowed, true)) {
-                throw new \InvalidArgumentException('Provider payload contains a forbidden nested field.');
-            }
-            $result[$key] = $this->normalizeField($key, $item, $depth + 1);
-        }
-        return $result;
-    }
-
-    /** Normalize structured lists and reject nested values outside each field-specific item schema. */
-    private function normalizeList(string $field, array $value, int $depth): array
-    {
-        $result = [];
-        foreach ($value as $item) {
-            if (in_array($field, ['categories', 'tags'], true)) {
-                if (!is_scalar($item) && $item !== null) {
-                    throw new \InvalidArgumentException('Provider taxonomy values must be scalar.');
+        $labels = [];
+        $default = in_array($type, ['product', 'variation'], true) ? 'woocommerce' : 'wordpress';
+        foreach ($data as $field => $value) {
+            $labels[$field] = $default;
+            if ($field === 'seo') {
+                foreach ($value as $nested => $_value) {
+                    $labels['seo.' . $nested] = $default;
                 }
-                $result[] = $item;
-                continue;
             }
-            $result[] = $this->normalizeField($field, $item, $depth);
         }
-        return $result;
-    }
-
-    /** Return the exact nested keys permitted for each structured provider payload field. */
-    private function nestedFields(string $field): array
-    {
-        return match ($field) {
-            'images' => ['src', 'alt'],
-            'headings' => ['level', 'text'],
-            'internal_links' => ['url', 'anchor'],
-            'offer' => ['price', 'currency', 'availability'],
-            'variation' => ['id', 'sku', 'attributes'],
-            'seo' => ['title', 'meta_description', 'canonical'],
-            'provenance' => ['source', 'field'],
-            default => [],
-        };
-    }
-
-    /** Identify sequential arrays so structured list items cannot masquerade as arbitrary objects. */
-    private function isList(array $value): bool
-    {
-        return $value === [] || array_keys($value) === range(0, count($value) - 1);
+        foreach ($provenance as $field => $label) {
+            if (!is_string($field) || !array_key_exists($field, $labels)
+                || !is_string($label) || !in_array($label, self::SOURCES, true)) {
+                throw new \InvalidArgumentException('Provider provenance references a forbidden field or source.');
+            }
+            $labels[$field] = $label;
+        }
+        return $labels;
     }
 }
