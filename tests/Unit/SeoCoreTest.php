@@ -166,4 +166,109 @@ final class SeoCoreTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $builder->build(['type' => 'product'], 'article');
     }
+
+    /** Verify URL, heading and link findings use bounded deterministic evidence. */
+    public function testAnalyzerValidatesUrlsHeadingsAndLinks(): void
+    {
+        $context = SeoContext::fromArray([
+            'title' => str_repeat('T', 30),
+            'meta_description' => str_repeat('M', 70),
+            'content' => '<h1>Main</h1><h2>Section</h2><h4>Skipped</h4><!-- <h1>fake</h1> -->',
+            'url' => 'https://example.test/item',
+            'canonical' => 'not-a-url',
+            'internal_links' => [
+                ['url' => 'https://other.test/page', 'anchor' => ''],
+            ],
+        ], 'post');
+
+        $findings = (new LocalSeoAnalyzer())->analyze($context);
+        $codes = array_column($findings, 'code');
+
+        self::assertContains('canonical_invalid', $codes);
+        self::assertContains('heading_hierarchy', $codes);
+        self::assertContains('internal_link_anchor_missing', $codes);
+        self::assertContains('internal_links_external_only', $codes);
+
+        foreach ($findings as $finding) {
+            self::assertSame(['code', 'severity', 'message', 'field', 'evidence', 'suggested_fix'], array_keys($finding));
+            self::assertIsNotString($finding['evidence']);
+        }
+    }
+
+    /** Verify offer and variation checks distinguish missing, invalid and conflicting data. */
+    public function testAnalyzerChecksOfferAndVariationSemantics(): void
+    {
+        $context = SeoContext::fromArray([
+            'title' => str_repeat('T', 30),
+            'content' => '<h1>Product</h1>',
+            'sku' => 'SKU',
+            'price' => '10.00',
+            'stock' => 0,
+            'offer' => ['price' => '12.00', 'currency' => 'USD', 'availability' => 'in_stock'],
+            'variation' => ['id' => 4, 'parent_id' => 4],
+        ], 'variation');
+
+        $codes = array_column((new LocalSeoAnalyzer())->analyze($context), 'code');
+
+        self::assertContains('meta_description_missing', $codes);
+        self::assertContains('offer_mismatch', $codes);
+        self::assertContains('variation_relationship_invalid', $codes);
+        self::assertNotContains('product_fields_missing', $codes);
+    }
+
+    /** Verify Unicode title and meta lengths are measured as characters at inclusive boundaries. */
+    public function testAnalyzerUsesUnicodeLengthBoundaries(): void
+    {
+        $title = str_repeat('ế', 30);
+        $meta = str_repeat('đ', 70);
+        $context = SeoContext::fromArray([
+            'title' => $title,
+            'meta_description' => $meta,
+            'content' => '<h1>Unicode</h1>',
+        ], 'post');
+
+        $codes = array_column((new LocalSeoAnalyzer())->analyze($context), 'code');
+
+        self::assertNotContains('title_length', $codes);
+        self::assertNotContains('meta_description_length', $codes);
+    }
+
+    /** Verify missing, null and invalid scalar types remain distinct analyzer outcomes. */
+    public function testAnalyzerInputContractDistinguishesNullAndInvalidTypes(): void
+    {
+        $missing = array_column((new LocalSeoAnalyzer())->analyze(SeoContext::fromArray([
+            'content' => '<h1>Body</h1>',
+        ], 'post')), 'code');
+        self::assertContains('title_missing', $missing);
+
+        $invalid = array_column((new LocalSeoAnalyzer())->analyze(SeoContext::fromArray([
+            'title' => ['bad'],
+            'meta_description' => ['bad'],
+            'content' => ['bad'],
+        ], 'post')), 'code');
+        self::assertContains('title_invalid', $invalid);
+        self::assertContains('meta_description_invalid', $invalid);
+        self::assertContains('content_invalid', $invalid);
+        self::assertNotContains('title_missing', $invalid);
+    }
+
+    /** Verify decimal strings compare canonically while invalid prices remain invalid. */
+    public function testAnalyzerUsesDecimalOfferPolicy(): void
+    {
+        $base = [
+            'title' => str_repeat('T', 30),
+            'content' => '<h1>Product</h1>',
+            'sku' => 'SKU',
+            'price' => '10.00',
+            'stock' => 0,
+            'offer' => ['price' => '10', 'currency' => 'USD', 'availability' => 'in_stock'],
+        ];
+        $matching = array_column((new LocalSeoAnalyzer())->analyze(SeoContext::fromArray($base, 'product')), 'code');
+        self::assertNotContains('offer_mismatch', $matching);
+
+        $invalid = $base;
+        $invalid['offer']['price'] = '-1.00';
+        $invalidCodes = array_column((new LocalSeoAnalyzer())->analyze(SeoContext::fromArray($invalid, 'product')), 'code');
+        self::assertContains('offer_invalid', $invalidCodes);
+    }
 }
