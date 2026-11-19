@@ -15,7 +15,7 @@ Cập nhật: 19/11/2026 (UTC). R3 đã đóng snapshot implementation/test C r2
   - `docs/giai-doan-2-increment-c-r2-report.md`
   - `docs/giai-doan-2-increment-c-report.md`
   - `docs/giai-doan-3-increment-c-feedbeck.md`
-- `.phpunit.result.cache` là cache PHPUnit, không được xem là logic evidence. Sáu tài liệu kế hoạch còn untracked (`giai-doan-2-increment-B-*`, `giai-doan-2-increment-c-r2.md`, `giai-doan-2-increment-c-r3.md`, `giai-doan-3-increment-c.md`) không thuộc snapshot implementation này.
+- `.phpunit.result.cache` là cache PHPUnit, không được xem là logic evidence. Năm tài liệu kế hoạch còn untracked (`giai-doan-2-increment-B-*`, `giai-doan-2-increment-c-r2.md`, `giai-doan-3-increment-c.md`) không thuộc snapshot implementation này; báo cáo r3 này đã được commit riêng sau verification.
 
 ## 2. Checksum sau commit và sau verification
 
