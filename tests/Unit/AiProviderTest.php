@@ -170,4 +170,61 @@ final class AiProviderTest extends TestCase
         self::assertSame('editor', $suggestion['output']['provenance']);
         self::assertSame('vi', $suggestion['output']['language']);
     }
+
+    /**
+     * Prove the provider cannot return a response when an injected boundary rejects it.
+     */
+    public function testInjectedValidatorIsCalledAndCanRejectResponse(): void
+    {
+        $calls = 0;
+        $validator = new class($calls) implements \MySeoForAll\AI\Contracts\AiOutputValidatorContract {
+            /** @var int */
+            private $calls;
+
+            /**
+             * Capture the external invocation counter used by the integration assertion.
+             * The reference lets the test observe the validator call without changing provider behavior.
+             */
+            public function __construct(&$calls)
+            {
+                $this->calls =& $calls;
+            }
+
+            /**
+             * Reject the generated response to prove the injected boundary controls delivery.
+             * The method increments the shared counter and throws the stable invalid-response category.
+             */
+            public function validate(array $response, ?string $expectedTask = null, ?string $expectedProvider = null): array
+            {
+                $this->calls++;
+                throw new \MySeoForAll\AI\Contracts\AiProviderException(
+                    \MySeoForAll\AI\Contracts\AiProviderException::INVALID_RESPONSE,
+                    'Injected validator rejected the response.'
+                );
+            }
+        };
+
+        $request = [
+            'schema_version' => AiProvider::REQUEST_SCHEMA,
+            'task' => 'seo_analysis',
+            'context' => (new \MySeoForAll\SEO\Context\ProviderPayloadBuilder())->build(
+                ['title' => 'Article', 'content' => 'Body'],
+                'article'
+            ),
+        ];
+        $original = $request;
+
+        try {
+            (new FakeAiProvider($validator))->generate($request);
+            self::fail('The injected validator must be authoritative.');
+        } catch (\MySeoForAll\AI\Contracts\AiProviderException $exception) {
+            self::assertSame(
+                \MySeoForAll\AI\Contracts\AiProviderException::INVALID_RESPONSE,
+                $exception->category()
+            );
+        }
+
+        self::assertSame(1, $calls);
+        self::assertSame($original, $request);
+    }
 }

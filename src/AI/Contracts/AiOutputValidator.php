@@ -12,7 +12,7 @@ namespace MySeoForAll\AI\Contracts;
 /**
  * Validates bounded, closed response envelopes before an AI result reaches a caller.
  */
-final class AiOutputValidator
+final class AiOutputValidator implements AiOutputValidatorContract
 {
     public const RESPONSE_SCHEMA = 'myseo.ai.response.v1';
     public const MAX_FINDINGS = 50;
@@ -61,7 +61,7 @@ final class AiOutputValidator
      * @param array<string,mixed> $response
      * @return array<string,mixed>
      */
-    public function validate(array $response, ?string $expectedTask = null): array
+    public function validate(array $response, ?string $expectedTask = null, ?string $expectedProvider = null): array
     {
         $this->assertExactKeys($response, ['schema_version', 'provider', 'task', 'status', 'output']);
         if ($response['schema_version'] !== self::RESPONSE_SCHEMA) {
@@ -71,6 +71,9 @@ final class AiOutputValidator
             $this->fail('Response provider is invalid.');
         }
         $this->assertSafeText($response['provider'], self::MAX_TEXT_CODE_POINTS, false);
+        if ($expectedProvider !== null && $response['provider'] !== $expectedProvider) {
+            $this->fail('Response provider does not match the expected provider.');
+        }
         if (!is_string($response['task']) || !in_array($response['task'], self::TASKS, true)) {
             $this->fail('Response task is invalid.');
         }

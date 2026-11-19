@@ -199,4 +199,62 @@ final class AiOutputContractTest extends TestCase
         self::assertSame(AiProviderException::INVALID_RESPONSE, $invalid->category());
         self::assertStringNotContainsString('token', $invalid->getMessage());
     }
+
+    /**
+     * Prove expected-task binding and response envelope mutations are rejected by the shared validator.
+     * The fixture remains unchanged so the test also checks that validation observes immutable caller data.
+     */
+    public function testExpectedTaskAndTamperedEnvelopeAreRejected(): void
+    {
+        $validator = new AiOutputValidator();
+        $response = [
+            'schema_version' => AiOutputValidator::RESPONSE_SCHEMA,
+            'provider' => 'fixture',
+            'task' => 'title_meta_suggestion',
+            'status' => 'ok',
+            'output' => [
+                'target_field' => 'title',
+                'value' => 'A title',
+                'language' => 'vi',
+                'provenance' => 'editor',
+            ],
+        ];
+        $original = $response;
+
+        try {
+            $validator->validate($response, 'seo_analysis');
+            self::fail('A response for a different task must be rejected.');
+        } catch (AiProviderException $exception) {
+            self::assertSame(AiProviderException::INVALID_RESPONSE, $exception->category());
+        }
+
+        self::assertSame($original, $response);
+
+        foreach (['schema_version', 'provider', 'status', 'task'] as $field) {
+            $tampered = $response;
+            $tampered[$field] = match ($field) {
+                'schema_version' => 'myseo.ai.response.tampered',
+                'provider' => 'other-provider',
+                'status' => 'error',
+                'task' => 'seo_analysis',
+            };
+
+            try {
+                $validator->validate($tampered, 'title_meta_suggestion', 'fixture');
+                self::fail($field . ' tampering must be rejected.');
+            } catch (AiProviderException $exception) {
+                self::assertSame(AiProviderException::INVALID_RESPONSE, $exception->category(), $field);
+            }
+        }
+
+        $tamperedOutput = $response;
+        $tamperedOutput['output']['publish'] = true;
+        try {
+            $validator->validate($tamperedOutput, 'title_meta_suggestion', 'fixture');
+            self::fail('Output mutation must be rejected.');
+        } catch (AiProviderException $exception) {
+            self::assertSame(AiProviderException::INVALID_RESPONSE, $exception->category());
+            self::assertStringNotContainsString('publish', $exception->getMessage());
+        }
+    }
 }

@@ -22,12 +22,12 @@ final class FakeAiProvider implements AiProvider
         'product_description_draft',
     ];
 
-    private \MySeoForAll\AI\Contracts\AiOutputValidator $outputValidator;
+    private \MySeoForAll\AI\Contracts\AiOutputValidatorContract $outputValidator;
 
     /**
      * Inject the shared response boundary while retaining a no-argument offline provider.
      */
-    public function __construct(?\MySeoForAll\AI\Contracts\AiOutputValidator $outputValidator = null)
+    public function __construct(?\MySeoForAll\AI\Contracts\AiOutputValidatorContract $outputValidator = null)
     {
         $this->outputValidator = $outputValidator ?? new \MySeoForAll\AI\Contracts\AiOutputValidator();
     }
@@ -61,7 +61,7 @@ final class FakeAiProvider implements AiProvider
             'output' => $output,
         ];
 
-        return $this->outputValidator->validate($response, $task);
+        return $this->outputValidator->validate($response, $task, $this->name());
     }
 
     /**
