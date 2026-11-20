@@ -103,7 +103,12 @@ final class SeoModule implements Module
      * Provide a named diagnostics listener without rendering or mutating platform content.
      * @return void
      */
-    public function registerDiagnosticsSurface(): void
+    public function registerDiagnosticsSurface($postId = 0): void
     {
+        $postId = is_int($postId) ? $postId : 0;
+        if ($postId <= 0 || !$this->container->has(ContentSeoInspector::class)) {
+            return;
+        }
+        $this->container->get(ContentSeoInspector::class)->inspect($postId);
     }
 }

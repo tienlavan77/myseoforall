@@ -112,9 +112,13 @@ final class WordPressRankMathProbe implements RankMathEnvironmentProbe
         }
         $value = get_option('active_plugins', []);
         if (!is_array($value)) {
-            return [];
+            return null;
         }
-        return array_values(array_filter($value, 'is_string'));
+        $plugins = array_values(array_filter($value, 'is_string'));
+        if (count($plugins) !== count($value)) {
+            return null;
+        }
+        return $plugins;
     }
 
     /**
@@ -171,7 +175,6 @@ final class WordPressRankMathProbe implements RankMathEnvironmentProbe
      */
     private function isRankMathPlugin(string $plugin): bool
     {
-        $plugin = strtolower($plugin);
-        return str_contains($plugin, 'rank-math') || str_contains($plugin, 'rank_math');
+        return strtolower(trim($plugin)) === 'seo-by-rank-math/rank-math.php';
     }
 }

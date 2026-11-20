@@ -72,10 +72,10 @@ final class EnvironmentCheck
                 'active' => $woocommerceActive,
                 'installation' => $woocommerceActive ? 'installed' : 'unknown',
                 'activation' => $woocommerceActive ? 'active' : 'unknown',
-                'compatible' => $woocommerceActive ? true : 'unknown',
+                'compatible' => 'unknown',
                 'version' => $woocommerceActive && defined('WC_VERSION') ? WC_VERSION : null,
                 'message' => $woocommerceActive
-                    ? 'WooCommerce sẵn sàng.'
+                    ? 'WooCommerce đã nạp nhưng chưa có bằng chứng tương thích.'
                     : 'WooCommerce chưa được xác nhận; tính năng sản phẩm đang tạm unavailable.',
             ],
             'mbstring' => [
@@ -104,20 +104,57 @@ final class EnvironmentCheck
         $result = [];
         foreach (['php', 'wordpress', 'woocommerce', 'mbstring'] as $name) {
             $value = is_array($provided[$name] ?? null) ? $provided[$name] : [];
-            $value['name'] = (string) ($value['name'] ?? $name);
-            $value['installation'] = in_array($value['installation'] ?? null, ['installed', 'absent', 'unknown'], true)
+            $installation = in_array($value['installation'] ?? null, ['installed', 'absent', 'unknown'], true)
                 ? $value['installation'] : 'unknown';
-            $value['activation'] = in_array($value['activation'] ?? null, ['active', 'inactive', 'unknown'], true)
+            $activation = in_array($value['activation'] ?? null, ['active', 'inactive', 'unknown'], true)
                 ? $value['activation'] : 'unknown';
-            $value['compatible'] = in_array($value['compatible'] ?? null, [true, false, 'unknown'], true)
+            $compatible = in_array($value['compatible'] ?? null, [true, false, 'unknown'], true)
                 ? $value['compatible'] : 'unknown';
-            $value['installed'] = $value['installed'] ?? ($value['installation'] === 'installed');
-            $value['active'] = $value['active'] ?? ($value['activation'] === 'active');
-            $value['version'] = isset($value['version']) && is_string($value['version']) ? $value['version'] : null;
-            $value['message'] = is_string($value['message'] ?? null) ? $value['message'] : 'Không có thông tin môi trường.';
-            $result[$name] = $value;
+            $version = isset($value['version']) && is_string($value['version']) ? trim($value['version']) : null;
+            if ($version === '') {
+                $version = null;
+            }
+
+            $result[$name] = [
+                'name' => $name,
+                'installed' => $installation === 'installed' ? true : ($installation === 'absent' ? false : 'unknown'),
+                'active' => $activation === 'active' ? true : ($activation === 'inactive' ? false : 'unknown'),
+                'installation' => $installation,
+                'activation' => $activation,
+                'compatible' => $compatible,
+                'version' => $version,
+                'message' => $this->statusMessage($name, $installation, $activation, $compatible),
+            ];
+            if ($name === 'mbstring') {
+                $result[$name]['fallback'] = $installation !== 'installed';
+            }
         }
         return $result;
+    }
+
+    /**
+     * Build a stable display message from normalized evidence rather than caller text.
+     * @param string $name
+     * @param string $installation
+     * @param string $activation
+     * @param bool|string $compatible
+     * @return string
+     */
+    private function statusMessage(string $name, string $installation, string $activation, $compatible): string
+    {
+        if ($compatible === false) {
+            return $name === 'php' ? 'PHP không tương thích.' : $name . ' chưa tương thích.';
+        }
+        if ($installation === 'unknown' || $activation === 'unknown' || $compatible === 'unknown') {
+            return $name . ' chưa đủ bằng chứng runtime.';
+        }
+        if ($name === 'mbstring' && $installation === 'absent') {
+            return 'mbstring thiếu; đang dùng fallback UTF-8 deterministic.';
+        }
+        if ($activation === 'inactive') {
+            return $name . ' đã cài nhưng chưa kích hoạt.';
+        }
+        return $name . ' sẵn sàng.';
     }
 
     /**
@@ -127,6 +164,6 @@ final class EnvironmentCheck
     {
         $statuses = $this->evaluate();
 
-        return $statuses['php']['compatible'] && $statuses['wordpress']['compatible'];
+        return $statuses['php']['compatible'] === true && $statuses['wordpress']['compatible'] === true;
     }
 }

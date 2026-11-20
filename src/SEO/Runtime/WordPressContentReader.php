@@ -44,12 +44,22 @@ final class WordPressContentReader
      */
     public function readPost(int $postId): array
     {
+        if ($postId <= 0) {
+            return $this->envelope('invalid_source', 'invalid_post_id');
+        }
+        if (!is_callable($this->loader) && !function_exists('get_post')) {
+            return $this->envelope('unavailable', 'wordpress_unavailable');
+        }
+
         $raw = is_callable($this->loader) ? ($this->loader)($postId) : $this->load($postId);
-        if ($raw === null) {
+        if ($raw === null || $raw === false) {
             return $this->envelope('not_found', 'post_not_found');
         }
 
         $source = $this->normalize($raw);
+        if ($source === [] || (isset($source['id']) && (int) $source['id'] !== $postId)) {
+            return $this->envelope('invalid_source', 'invalid_post_source');
+        }
         $postType = (string) ($source['post_type'] ?? '');
         if (!in_array($postType, ['post', 'page'], true)) {
             return $this->envelope('unsupported_type', 'unsupported_post_type');
@@ -63,9 +73,11 @@ final class WordPressContentReader
         $payloadReason = null;
 
         try {
-            $payloadSource = $source;
-            unset($payloadSource['post_type']);
-            $payload = $this->builder->build($payloadSource, $resourceType, ['title' => 'wordpress', 'content' => 'wordpress']);
+            $payload = $this->builder->build(
+                $this->payloadSource($source),
+                $resourceType,
+                ['title' => 'wordpress', 'content' => 'wordpress']
+            );
         } catch (\InvalidArgumentException $exception) {
             $payloadStatus = 'rejected';
             $payloadReason = $this->safeReason($exception);
@@ -101,9 +113,7 @@ final class WordPressContentReader
                 'content' => isset($raw->post_content) ? (string) $raw->post_content : '',
                 'excerpt' => isset($raw->post_excerpt) ? (string) $raw->post_excerpt : '',
             ];
-            if (isset($raw->post_name) && is_string($raw->post_name)) {
-                $source['slug'] = $raw->post_name;
-            }
+            // Slug is intentionally omitted because it is outside the provider payload schema.
         } else {
             return [];
         }
@@ -122,6 +132,26 @@ final class WordPressContentReader
         }
 
         return $source;
+    }
+
+    /**
+     * Project only provider-approved WordPress fields into the AI boundary.
+     * @param array<string,mixed> $source
+     * @return array<string,mixed>
+     */
+    private function payloadSource(array $source): array
+    {
+        $allowed = [
+            'id', 'title', 'content', 'excerpt', 'meta_description', 'url', 'canonical',
+            'images', 'categories', 'tags', 'internal_links', 'seo', 'language', 'headings',
+        ];
+        $payload = [];
+        foreach ($allowed as $field) {
+            if (array_key_exists($field, $source)) {
+                $payload[$field] = $source[$field];
+            }
+        }
+        return $payload;
     }
 
     /**

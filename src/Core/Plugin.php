@@ -93,37 +93,129 @@ final class Plugin
     {
         $environment = $this->container->get(EnvironmentCheck::class);
         $configuration = $this->container->get(Configuration::class);
-        $coexistence = [
-            'outputs' => [],
-            'write_allowed' => false,
-        ];
-
+        $snapshot = [];
         if ($this->container->has(OwnershipRegistry::class)) {
             try {
                 $snapshot = $this->container->get(OwnershipRegistry::class)->resolve();
-                $coexistence = [
-                    'outputs' => is_array($snapshot['outputs'] ?? null) ? $snapshot['outputs'] : [],
-                    'write_allowed' => false,
-                ];
             } catch (\Throwable) {
-                $coexistence = [
-                    'outputs' => [],
-                    'write_allowed' => false,
-                    'reason' => 'unavailable',
-                ];
+                $snapshot = [];
             }
         }
 
         return [
             'plugin' => [
                 'name' => 'My SEO For All',
-                'version' => defined('MYSEO_FOR_ALL_VERSION') ? MYSEO_FOR_ALL_VERSION : '0.1.0',
+                'version' => defined('MYSEO_FOR_ALL_VERSION') && is_string(MYSEO_FOR_ALL_VERSION)
+                    ? MYSEO_FOR_ALL_VERSION : '0.1.0',
             ],
             'configuration' => $this->safeConfiguration($configuration->all()),
-            'environment' => $environment->evaluate(),
-            'modules' => array_map(static fn (Module $module): array => $module->health(), $this->modules),
-            'coexistence' => $coexistence,
+            'environment' => $this->safeEnvironment($environment->evaluate()),
+            'modules' => array_map(fn (Module $module): array => $this->safeModule($module->health()), $this->modules),
+            'coexistence' => $this->safeCoexistence($snapshot),
         ];
+    }
+
+    /**
+     * Project environment records into the closed diagnostic schema.
+     * Unknown source keys and caller messages are removed before health output.
+     * @param array<string,mixed> $statuses
+     * @return array<string,array<string,mixed>>
+     */
+    private function safeEnvironment(array $statuses): array
+    {
+        $result = [];
+        foreach (['php', 'wordpress', 'woocommerce', 'mbstring'] as $name) {
+            $status = is_array($statuses[$name] ?? null) ? $statuses[$name] : [];
+            $installation = in_array($status['installation'] ?? null, ['installed', 'absent', 'unknown'], true)
+                ? $status['installation'] : 'unknown';
+            $activation = in_array($status['activation'] ?? null, ['active', 'inactive', 'unknown'], true)
+                ? $status['activation'] : 'unknown';
+            $compatible = in_array($status['compatible'] ?? null, [true, false, 'unknown'], true)
+                ? $status['compatible'] : 'unknown';
+            $result[$name] = [
+                'name' => $name,
+                'installed' => $installation === 'installed' ? true : ($installation === 'absent' ? false : 'unknown'),
+                'active' => $activation === 'active' ? true : ($activation === 'inactive' ? false : 'unknown'),
+                'installation' => $installation,
+                'activation' => $activation,
+                'compatible' => $compatible,
+                'version' => isset($status['version']) && is_string($status['version']) ? $status['version'] : null,
+                'message' => $this->safeStatusMessage($name, $installation, $activation, $compatible),
+            ];
+            if ($name === 'mbstring') {
+                $result[$name]['fallback'] = $installation !== 'installed';
+            }
+        }
+        return $result;
+    }
+
+    /**
+     * Build a deterministic status label from closed evidence enums.
+     * @param string $name
+     * @param string $installation
+     * @param string $activation
+     * @param bool|string $compatible
+     * @return string
+     */
+    private function safeStatusMessage(string $name, string $installation, string $activation, $compatible): string
+    {
+        if ($compatible === false) {
+            return $name . ' chưa tương thích.';
+        }
+        if ($installation === 'unknown' || $activation === 'unknown' || $compatible === 'unknown') {
+            return $name . ' chưa đủ bằng chứng runtime.';
+        }
+        if ($activation === 'inactive') {
+            return $name . ' đã cài nhưng chưa kích hoạt.';
+        }
+        return $name . ' sẵn sàng.';
+    }
+
+    /**
+     * Project module health into fixed fields and stable enum values.
+     * @param array<string,mixed> $module
+     * @return array<string,mixed>
+     */
+    private function safeModule(array $module): array
+    {
+        $name = in_array($module['name'] ?? null, ['admin', 'woocommerce', 'seo', 'rank_math'], true)
+            ? $module['name'] : 'unknown';
+        return [
+            'name' => $name,
+            'available' => ($module['available'] ?? false) === true,
+            'message' => $name === 'rank_math'
+                ? 'Rank Math chỉ được đọc thụ động; chưa chứng minh tương thích.'
+                : (($module['available'] ?? false) === true ? $name . ' sẵn sàng.' : $name . ' chưa sẵn sàng.'),
+            'write_allowed' => ($module['write_allowed'] ?? false) === true,
+            'frontend_owned' => ($module['frontend_owned'] ?? false) === true,
+            'compatibility' => in_array($module['compatibility'] ?? null, ['compatible', 'incompatible', 'unknown'], true)
+                ? $module['compatibility'] : 'unknown',
+        ];
+    }
+
+    /**
+     * Project ownership decisions without exposing raw registry records.
+     * @param array<string,mixed> $snapshot
+     * @return array<string,mixed>
+     */
+    private function safeCoexistence(array $snapshot): array
+    {
+        $allowedOutputs = ['title_meta', 'json_ld', 'sitemap', 'ai_draft'];
+        $outputs = [];
+        $sourceOutputs = is_array($snapshot['outputs'] ?? null) ? $snapshot['outputs'] : [];
+        foreach ($allowedOutputs as $output) {
+            $decision = is_array($sourceOutputs[$output] ?? null) ? $sourceOutputs[$output] : [];
+            $outputs[$output] = [
+                'owner' => is_string($decision['owner'] ?? null) ? $decision['owner'] : 'unknown',
+                'state' => in_array($decision['state'] ?? null, ['owned', 'unknown', 'conflict', 'excluded'], true)
+                    ? $decision['state'] : 'unknown',
+                'duplicate_risk' => in_array($decision['duplicate_risk'] ?? null, ['none', 'possible', 'high'], true)
+                    ? $decision['duplicate_risk'] : 'possible',
+                'reason' => is_string($decision['reason'] ?? null) ? $decision['reason'] : 'unavailable',
+                'write_allowed' => false,
+            ];
+        }
+        return ['outputs' => $outputs, 'write_allowed' => false];
     }
 
     /**
@@ -135,23 +227,22 @@ final class Plugin
     private function safeConfiguration(array $values): array
     {
         $summary = [];
-        $mapping = [
-            'schema_version' => 'version',
-            'version' => 'version',
-            'site_language' => 'site_language',
-            'ai_enabled' => 'ai_enabled',
-            'rank_math_mode' => 'rank_math_mode',
-            'sitemap_owner' => 'sitemap_owner',
-        ];
-        foreach ($mapping as $source => $target) {
-            if (!array_key_exists($source, $values) || !is_scalar($values[$source])) {
-                continue;
-            }
-            $value = $values[$source];
-            if (is_string($value) && preg_match('/secret|token|key|password|passwd|@|\\/etc\\//i', $value) === 1) {
-                continue;
-            }
-            $summary[$target] = is_bool($value) ? $value : (string) $value;
+        $version = $values['version'] ?? $values['schema_version'] ?? null;
+        if (is_string($version) && preg_match('/^[A-Za-z0-9._:-]{1,64}$/', $version) === 1) {
+            $summary['version'] = $version;
+        }
+        $locale = $values['site_language'] ?? $values['locale'] ?? null;
+        if (is_string($locale) && preg_match('/^[a-z]{2}(?:_[A-Z]{2})?$/', $locale) === 1) {
+            $summary['site_language'] = $locale;
+        }
+        if (is_bool($values['ai_enabled'] ?? null)) {
+            $summary['ai_enabled'] = $values['ai_enabled'];
+        }
+        if (in_array($values['rank_math_mode'] ?? null, ['observe', 'disabled', 'unknown'], true)) {
+            $summary['rank_math_mode'] = $values['rank_math_mode'];
+        }
+        if (in_array($values['sitemap_owner'] ?? null, ['myseo_for_all', 'rank_math', 'unknown'], true)) {
+            $summary['sitemap_owner'] = $values['sitemap_owner'];
         }
         ksort($summary);
         return $summary;

@@ -16,6 +16,7 @@ use MySeoForAll\Core\Contracts\Module;
 final class WooCommerceModule implements Module
 {
     private ?\MySeoForAll\Core\HookDispatcher $dispatcher;
+    private bool $lifecycleObserved = false;
 
     /**
      * Accept the optional composition services while preserving the foundation constructor contract.
@@ -58,6 +59,7 @@ final class WooCommerceModule implements Module
      */
     public function onWooCommerceInit(): void
     {
+        $this->lifecycleObserved = true;
     }
 
     /**
@@ -80,6 +82,7 @@ final class WooCommerceModule implements Module
         return [
             'name' => 'woocommerce',
             'available' => $available,
+            'lifecycle_observed' => $this->lifecycleObserved,
             'message' => $available
                 ? 'WooCommerce sẵn sàng.'
                 : 'WooCommerce chưa được kích hoạt; tính năng sản phẩm chưa hoạt động.',

@@ -12,6 +12,25 @@ namespace MySeoForAll\Integrations\RankMath;
 
 final class WordPressRankMathSourceObserver implements RankMathSourceObserver
 {
+    /** @var list<string> */
+    private array $allowedSlots;
+
+    /**
+     * Restrict runtime reads to explicitly approved mapping slots.
+     * @param list<string> $allowedSlots
+     * @return void
+     */
+    public function __construct(array $allowedSlots = [])
+    {
+        $this->allowedSlots = [];
+        foreach ($allowedSlots as $slot) {
+            if (is_string($slot) && trim($slot) !== '') {
+                $this->allowedSlots[] = trim($slot);
+            }
+        }
+        $this->allowedSlots = array_values(array_unique($this->allowedSlots));
+    }
+
     /**
      * Observe one post-meta slot with explicit presence and provenance metadata.
      * The source identifier must contain a positive post identifier to avoid broad reads.
@@ -22,8 +41,8 @@ final class WordPressRankMathSourceObserver implements RankMathSourceObserver
     public function observe(string $sourceId, string $slotKey): array
     {
         $postId = $this->postId($sourceId);
-        if ($postId <= 0 || $slotKey === '') {
-            return $this->unreadable('invalid_source');
+        if ($postId <= 0 || $slotKey === '' || !in_array($slotKey, $this->allowedSlots, true)) {
+            return $this->unreadable('unmapped_source');
         }
         if (!function_exists('metadata_exists') || !function_exists('get_post_meta')) {
             return $this->unreadable('wordpress_metadata_unavailable');
@@ -77,7 +96,7 @@ final class WordPressRankMathSourceObserver implements RankMathSourceObserver
             'can_confirm_presence' => false,
             'source' => 'wordpress_post_meta',
             'evidence_identity' => 'wordpress:unavailable',
-            'provenance' => 'runtime_verified',
+            'provenance' => 'synthetic',
             'reason' => $reason,
         ];
     }

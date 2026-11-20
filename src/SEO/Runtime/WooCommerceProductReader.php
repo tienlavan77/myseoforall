@@ -58,10 +58,14 @@ final class WooCommerceProductReader
         if (!in_array($type, ['product', 'variation'], true)) {
             return $this->envelope('unsupported_type', 'unsupported_product_type');
         }
+        $sourceId = (int) ($source['id'] ?? 0);
+        if ($sourceId <= 0) {
+            return $this->envelope('invalid_source', 'invalid_product_id', $type);
+        }
 
         if ($type === 'variation') {
             $parentId = (int) ($source['variation']['parent_id'] ?? $source['parent_id'] ?? 0);
-            if ($parentId <= 0 || !$this->parentExists($parentId, $source)) {
+            if ($parentId <= 0 || $parentId === $sourceId || !$this->parentExists($parentId, $source)) {
                 return $this->envelope('invalid_source', 'parent_product_missing', 'variation');
             }
         }
@@ -114,7 +118,9 @@ final class WooCommerceProductReader
             }
         };
 
-        $type = (string) ($read($raw, 'get_type') ?? 'product');
+        $rawType = $read($raw, 'get_type');
+        $type = is_string($rawType) ? trim($rawType) : '';
+        $type = $type === 'simple' ? 'product' : $type;
         $id = (int) ($read($raw, 'get_id') ?? 0);
         $parentId = (int) ($read($raw, 'get_parent_id') ?? 0);
         $manageStock = $read($raw, 'get_manage_stock');
@@ -135,7 +141,8 @@ final class WooCommerceProductReader
             'manage_stock' => $manageStock,
             'stock_quantity' => $stockQuantity,
             'stock_status' => $stockStatus,
-            'currency' => $read($raw, 'get_woocommerce_currency'),
+            'currency' => $read($raw, 'get_woocommerce_currency')
+                ?? (function_exists('get_woocommerce_currency') ? get_woocommerce_currency() : null),
             'url' => $read($raw, 'get_permalink'),
             'parent_id' => $parentId,
             'attributes' => $read($raw, 'get_attributes'),
@@ -167,7 +174,7 @@ final class WooCommerceProductReader
             'content' => $source['description'] ?? ($source['short_description'] ?? ''),
             'excerpt' => $source['short_description'] ?? '',
             'sku' => $source['sku'] ?? null,
-            'price' => $source['price'] ?? null,
+            'price' => $this->priceValue($source),
             'stock' => $this->normalizedStock($source),
             'currency' => $source['currency'] ?? null,
             'availability' => $this->availability($source),
@@ -193,7 +200,7 @@ final class WooCommerceProductReader
             'description' => $source['description'] ?? ($source['short_description'] ?? ''),
             'short_description' => $source['short_description'] ?? null,
             'sku' => $source['sku'] ?? null,
-            'price' => $source['price'] ?? null,
+            'price' => $this->priceValue($source),
             'stock' => $this->normalizedStock($source),
             'attributes' => $this->attributes($source['attributes'] ?? null),
             'offer' => $this->offer($source),
@@ -213,6 +220,17 @@ final class WooCommerceProductReader
      * @param array<string,mixed> $source
      * @return int|null
      */
+    /**
+     * Preserve valid decimal strings while treating an empty price as missing.
+     * @param array<string,mixed> $source
+     * @return mixed
+     */
+    private function priceValue(array $source)
+    {
+        $price = $source['price'] ?? null;
+        return $price === '' ? null : $price;
+    }
+
     private function normalizedStock(array $source): ?int
     {
         if (($source['manage_stock'] ?? null) !== true) {
@@ -282,10 +300,17 @@ final class WooCommerceProductReader
      */
     private function parentExists(int $parentId, array $source): bool
     {
+        if ($parentId <= 0) {
+            return false;
+        }
         if (array_key_exists('parent_exists', $source)) {
             return $source['parent_exists'] === true;
         }
-        return function_exists('wc_get_product') && wc_get_product($parentId) !== false && wc_get_product($parentId) !== null;
+        if (!function_exists('wc_get_product')) {
+            return false;
+        }
+        $parent = wc_get_product($parentId);
+        return $parent !== false && $parent !== null;
     }
 
     /**

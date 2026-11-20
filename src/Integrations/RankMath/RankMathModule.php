@@ -77,17 +77,27 @@ final class RankMathModule implements Module
     {
         $compatibility = 'unknown';
         $reason = 'runtime_unobserved';
+        $dependencyReady = false;
         try {
             $decision = $this->container->get(RankMathDetector::class)->detect();
-            $compatibility = (string) ($decision['compatibility']['state'] ?? 'unknown');
-            $reason = (string) ($decision['reason'] ?? $reason);
+            $compatibility = in_array($decision['compatibility'] ?? null, ['compatible', 'incompatible', 'unknown'], true)
+                ? $decision['compatibility'] : 'unknown';
+            $reason = in_array($decision['reason'] ?? null, [
+                'plugin_absent', 'installed_inactive', 'active_installation_metadata_missing',
+                'matrix_unproven_for_range', 'version_unavailable', 'runtime_unobserved',
+            ], true) ? $decision['reason'] : 'runtime_unavailable';
+            $dependencyReady = $decision['installation'] === 'installed'
+                && $decision['activation'] === 'active'
+                && $decision['compatibility'] === 'compatible';
         } catch (\Throwable) {
             $reason = 'runtime_unavailable';
         }
 
         return [
             'name' => 'rank_math',
-            'available' => true,
+            'available' => $this->container->has(RankMathReadAdapter::class)
+                && $this->container->has(OwnershipRegistry::class),
+            'dependency_ready' => $dependencyReady,
             'message' => 'Rank Math chỉ được đọc thụ động; chưa chứng minh tương thích.',
             'compatibility' => $compatibility,
             'reason' => $reason,

@@ -159,21 +159,38 @@ final class AdminModule implements Module
         echo '<form method="post" action="options.php">';
         echo '<p>' . $this->escapeHtml('Cấu hình nền tảng theo phạm vi site.') . '</p>';
         echo '<h2>' . $this->escapeHtml('Health Check') . '</h2><ul>';
-        foreach ($statuses as $status) {
-            if (!is_array($status)) {
-                continue;
-            }
-            $name = $this->escapeHtml((string) ($status['name'] ?? 'unknown'));
-            $message = $this->escapeHtml((string) ($status['message'] ?? 'Không có thông tin.'));
-            echo "<li><strong>{$name}</strong>: {$message}</li>";
+        foreach (['php', 'wordpress', 'woocommerce', 'mbstring'] as $key) {
+            $status = is_array($statuses[$key] ?? null) ? $statuses[$key] : [];
+            $label = $key;
+            $compatible = in_array($status['compatible'] ?? null, [true, false, 'unknown'], true)
+                ? $status['compatible'] : 'unknown';
+            $message = $compatible === true ? $key . ' sẵn sàng.'
+                : ($compatible === false ? $key . ' chưa tương thích.' : $key . ' chưa đủ bằng chứng runtime.');
+            echo '<li><strong>' . $this->escapeHtml($label) . '</strong>: '
+                . $this->escapeHtml($message) . '</li>';
         }
-        foreach (($diagnostics['modules'] ?? []) as $module) {
-            if (!is_array($module)) {
-                continue;
+        foreach (['admin', 'woocommerce', 'seo', 'rank_math'] as $key) {
+            $module = [];
+            foreach (($diagnostics['modules'] ?? []) as $candidate) {
+                if (is_array($candidate) && ($candidate['name'] ?? null) === $key) {
+                    $module = $candidate;
+                    break;
+                }
             }
-            $name = $this->escapeHtml((string) ($module['name'] ?? 'module'));
-            $message = $this->escapeHtml((string) ($module['message'] ?? 'Không có thông tin.'));
-            echo "<li><strong>{$name}</strong>: {$message}</li>";
+            $available = ($module['available'] ?? false) === true;
+            $message = $key === 'rank_math'
+                ? 'Rank Math chỉ được đọc thụ động; chưa chứng minh tương thích.'
+                : ($available ? $key . ' sẵn sàng.' : $key . ' chưa sẵn sàng.');
+            echo '<li><strong>' . $this->escapeHtml($key) . '</strong>: '
+                . $this->escapeHtml($message) . '</li>';
+        }
+        foreach (['title_meta', 'json_ld', 'sitemap', 'ai_draft'] as $output) {
+            $decision = is_array(($diagnostics['coexistence']['outputs'] ?? [])[$output] ?? null)
+                ? $diagnostics['coexistence']['outputs'][$output] : [];
+            $risk = in_array($decision['duplicate_risk'] ?? null, ['none', 'possible', 'high'], true)
+                ? $decision['duplicate_risk'] : 'possible';
+            echo '<li><strong>' . $this->escapeHtml($output) . '</strong>: '
+                . $this->escapeHtml('duplicate_risk=' . $risk) . '</li>';
         }
         echo '</ul>';
         if (function_exists('settings_fields')) {
