@@ -37,9 +37,12 @@
 
 ### Tests
 
-- `tests/Unit/OwnershipRegistryEdgeContractTest.php` — `sha256:4cbd99f688f47308d3eea8ba51d9dd2216784bbf4ff88acc8192344eb374120c`
 - `tests/Unit/RankMathDetectorContractTest.php` — `sha256:f39679e8fd0dc634587b3fee3b62be6ab0f8c7a8ca2747b4b6a47ed9b0906af1`
-- Other Unit files were unchanged in this snapshot; their current hashes are retained in the source evidence.
+- `tests/Unit/RankMathReadAdapterContractTest.php` — `sha256:35ccfc14a044febaf7161953d6e839400a93168d572e1701567c7c27780e064e`
+- `tests/Unit/OwnershipRegistryCoexistenceTest.php` — `sha256:77c7a691a63a853d222cb0249145c390361b37638f2969f246d64209ee63e7b5`
+- `tests/Unit/OwnershipRegistryEdgeContractTest.php` — `sha256:4cbd99f688f47308d3eea8ba51d9dd2216784bbf4ff88acc8192344eb374120c`
+- `tests/Unit/SeoCoreTest.php` — `sha256:bcdbf3699735a03b67daa28d81beb58bd1af8d0f223bb6ced0b3e7ab17294935`
+- These five test hashes are complete for the Increment D review scope.
 
 ## Gate status
 
