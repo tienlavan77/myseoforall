@@ -76,13 +76,19 @@ final class SeoCoreTest extends TestCase
     {
         $status = (new RankMathDetector())->status(false);
 
-        self::assertFalse($status['installed']);
-        self::assertFalse($status['active']);
-        self::assertSame('unknown', $status['ownership']);
+        self::assertSame('unknown', $status['installation']);
+        self::assertSame('inactive', $status['activation']);
+        self::assertSame('unavailable', $status['version_state']);
+        self::assertSame('unknown', $status['compatibility']);
+        self::assertArrayNotHasKey('ownership', $status);
 
         $active = (new RankMathDetector())->status(true, '1.0.0');
-        self::assertSame('rank_math', $active['ownership']);
+        self::assertSame('unknown', $active['installation']);
+        self::assertSame('active', $active['activation']);
         self::assertSame('1.0.0', $active['version']);
+        self::assertSame('known', $active['version_state']);
+        self::assertSame('unknown', $active['compatibility']);
+        self::assertArrayNotHasKey('ownership', $active);
     }
 
     /** Verify the shared provider boundary rejects nested secrets and oversized values. */
@@ -130,13 +136,44 @@ final class SeoCoreTest extends TestCase
     public function testRankMathOwnershipRegistryRequiresExplicitState(): void
     {
         $registry = new \MySeoForAll\Integrations\RankMath\OwnershipRegistry();
-        $unknown = $registry->resolve(['active' => false, 'compatible' => false]);
-        $conflict = $registry->resolve(['active' => true, 'compatible' => true], ['rank_math', 'other_seo']);
+        $unknown = $registry->resolve(['active' => true, 'compatible' => true], ['rank_math']);
 
-        self::assertSame('unknown', $unknown['state']);
-        self::assertSame('unknown', $unknown['ownership']['title_meta']);
-        self::assertSame('conflict', $conflict['state']);
-        self::assertFalse($conflict['write_allowed']);
+        self::assertSame('unknown', $unknown['outputs']['title_meta']['owner']);
+        self::assertSame('unknown', $unknown['outputs']['title_meta']['state']);
+        self::assertSame('no_valid_claim', $unknown['outputs']['title_meta']['reason']);
+        self::assertSame('possible', $unknown['outputs']['title_meta']['duplicate_risk']);
+        self::assertFalse($unknown['outputs']['title_meta']['write_allowed']);
+        self::assertFalse($unknown['outputs']['ai_draft']['frontend_owned']);
+        self::assertFalse($unknown['outputs']['ai_draft']['publish_capability']);
+        self::assertFalse($unknown['write_allowed']);
+
+        $conflict = $registry->resolve([
+            'observations' => [
+                [
+                    'observation_id' => 'obs-rm-sitemap',
+                    'producer' => 'rank_math',
+                    'output' => 'sitemap',
+                    'assertion' => 'claim',
+                    'can_emit' => true,
+                    'source' => 'fixture:rm',
+                    'evidence_state' => 'observed',
+                ],
+                [
+                    'observation_id' => 'obs-other-sitemap',
+                    'producer' => 'other_seo',
+                    'output' => 'sitemap',
+                    'assertion' => 'claim',
+                    'can_emit' => true,
+                    'source' => 'fixture:other',
+                    'evidence_state' => 'observed',
+                ],
+            ],
+        ]);
+        self::assertSame('conflict', $conflict['outputs']['sitemap']['state']);
+        self::assertSame('blocked', $conflict['outputs']['sitemap']['duplicate_risk']);
+        self::assertSame('overlapping_claims', $conflict['outputs']['sitemap']['reason']);
+        self::assertSame('unknown', $conflict['outputs']['title_meta']['state']);
+        self::assertFalse($conflict['outputs']['sitemap']['write_allowed']);
     }
 
     /** Verify each supported resource keeps a builder-owned type and deterministic provenance. */
