@@ -196,11 +196,28 @@ final class SeoCoreTest extends TestCase
     }
 
     /** Verify offer and variation checks distinguish missing, invalid and conflicting data. */
+    /** Verify every analyzer finding code is covered by the deterministic registry. */
+    public function testAnalyzerFindingCodesAreRegistered(): void
+    {
+        $context = SeoContext::fromArray([
+            'content' => '<h1>Body</h1>',
+            'meta_description' => ['invalid'],
+        ], 'post');
+        $findings = (new LocalSeoAnalyzer())->analyze($context);
+        $reflection = new \ReflectionClass(LocalSeoAnalyzer::class);
+        $registered = array_keys($reflection->getConstant('CODE_ORDER'));
+        foreach ($findings as $finding) {
+            self::assertContains($finding['code'], $registered, $finding['code']);
+        }
+        self::assertContains('meta_description_invalid', $registered);
+    }
+
     public function testAnalyzerChecksOfferAndVariationSemantics(): void
     {
         $context = SeoContext::fromArray([
             'title' => str_repeat('T', 30),
             'content' => '<h1>Product</h1>',
+            'id' => 5,
             'sku' => 'SKU',
             'price' => '10.00',
             'stock' => 0,
@@ -213,10 +230,39 @@ final class SeoCoreTest extends TestCase
         self::assertContains('meta_description_missing', $codes);
         self::assertContains('offer_mismatch', $codes);
         self::assertContains('variation_relationship_invalid', $codes);
+        self::assertContains('variation_id_conflict', $codes);
         self::assertNotContains('product_fields_missing', $codes);
+
+        $matching = SeoContext::fromArray([
+            'id' => 4,
+            'content' => '<h1>Product</h1>',
+            'sku' => 'SKU',
+            'price' => '10.00',
+            'stock' => 0,
+            'variation' => ['id' => 4, 'parent_id' => 9],
+        ], 'variation');
+        $matchingCodes = array_column((new LocalSeoAnalyzer())->analyze($matching), 'code');
+        self::assertNotContains('variation_id_conflict', $matchingCodes);
     }
 
     /** Verify Unicode title and meta lengths are measured as characters at inclusive boundaries. */
+    /** Verify product commerce fields distinguish missing values from invalid types and formats. */
+    public function testAnalyzerValidatesProductCommerceFieldTypes(): void
+    {
+        $context = SeoContext::fromArray([
+            'title' => str_repeat('T', 30),
+            'content' => '<h1>Product</h1>',
+            'sku' => 123,
+            'price' => '10.0x',
+            'stock' => '4',
+        ], 'product');
+
+        $codes = array_column((new LocalSeoAnalyzer())->analyze($context), 'code');
+
+        self::assertNotContains('product_fields_missing', $codes);
+        self::assertContains('product_fields_invalid', $codes);
+    }
+
     public function testAnalyzerUsesUnicodeLengthBoundaries(): void
     {
         $title = str_repeat('ế', 30);

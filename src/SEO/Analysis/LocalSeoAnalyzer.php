@@ -19,10 +19,10 @@ final class LocalSeoAnalyzer
     /** @var array<string,int> Stable registry order for equal-severity findings. */
     private const CODE_ORDER = [
         'title_missing' => 10, 'title_invalid' => 11, 'content_missing' => 20, 'content_invalid' => 21,
-        'product_fields_missing' => 30,
-        'variation_relationship_missing' => 35, 'variation_relationship_invalid' => 36,
+        'product_fields_missing' => 30, 'product_fields_invalid' => 31,
+        'variation_relationship_missing' => 35, 'variation_relationship_invalid' => 36, 'variation_id_conflict' => 37,
         'offer_invalid' => 40, 'offer_mismatch' => 41, 'title_length' => 50,
-        'meta_description_missing' => 60, 'meta_description_length' => 70,
+        'meta_description_missing' => 60, 'meta_description_invalid' => 61, 'meta_description_length' => 70,
         'heading_primary_count' => 80, 'heading_hierarchy' => 81, 'heading_structure_missing' => 82,
         'canonical_missing' => 90, 'canonical_invalid' => 91, 'internal_links_missing' => 100,
         'internal_links_invalid' => 101, 'internal_links_external_only' => 102,
@@ -169,12 +169,26 @@ final class LocalSeoAnalyzer
         $type = $this->scalarText($context->get('type', ''));
         if (!in_array($type, ['product', 'variation'], true)) return;
         $missing = [];
+        $invalid = [];
         foreach (['sku', 'price', 'stock'] as $field) {
             $value = $context->get($field);
-            if ($value === null || $value === '') $missing[] = $field;
+            if ($value === null || $value === '') {
+                $missing[] = $field;
+                continue;
+            }
+            $valid = match ($field) {
+                'sku' => is_string($value) && trim($value) !== '',
+                'price' => $this->canonicalDecimal($value) !== null,
+                'stock' => is_int($value),
+                default => false,
+            };
+            if (!$valid) $invalid[] = $field;
         }
         if ($missing !== []) {
             $findings[] = $this->finding('product_fields_missing', 'blocker', 'Sản phẩm còn thiếu dữ liệu thương mại cần kiểm tra.', 'product', $missing);
+        }
+        if ($invalid !== []) {
+            $findings[] = $this->finding('product_fields_invalid', 'warning', 'Dữ liệu thương mại của sản phẩm có kiểu hoặc định dạng không hợp lệ.', 'product', $invalid); 
         }
         $offer = $context->get('offer');
         if ($offer !== null) {
@@ -196,6 +210,10 @@ final class LocalSeoAnalyzer
         }
         if (!is_int($variation['id']) || !is_int($variation['parent_id']) || $variation['id'] <= 0 || $variation['parent_id'] <= 0 || $variation['id'] === $variation['parent_id']) {
             $findings[] = $this->finding('variation_relationship_invalid', 'blocker', 'Quan hệ parent của variation không hợp lệ.', 'variation', ['reason' => 'invalid']);
+        }
+        $topLevelId = $context->get('id');
+        if (is_int($topLevelId) && $topLevelId > 0 && $topLevelId !== $variation['id']) {
+            $findings[] = $this->finding('variation_id_conflict', 'warning', 'ID cấp đầu không khớp với ID của variation.', 'id', ['top_level' => $topLevelId, 'variation' => $variation['id']]);
         }
     }
 
