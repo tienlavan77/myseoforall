@@ -388,6 +388,12 @@ final class OwnershipRegistryCoexistenceTest extends TestCase
         $plugin = new Plugin();
         $plugin->boot();
         $health = $plugin->health();
-        self::assertArrayNotHasKey('rank_math', $health['modules'] ?? []);
+        $rankMathHealth = array_values(array_filter(
+            $health['modules'] ?? [],
+            static fn (array $module): bool => ($module['name'] ?? null) === 'rank_math'
+        ));
+        self::assertCount(1, $rankMathHealth);
+        self::assertFalse($rankMathHealth[0]['write_allowed']);
+        self::assertSame('unknown', $rankMathHealth[0]['compatibility']);
     }
 }

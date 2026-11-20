@@ -15,6 +15,10 @@ use MySeoForAll\Core\Configuration\Configuration;
 use MySeoForAll\Core\Environment\EnvironmentCheck;
 use MySeoForAll\Core\Contracts\Module;
 use MySeoForAll\Infrastructure\WordPress\OptionStore;
+use MySeoForAll\Integrations\RankMath\OwnershipRegistry;
+use MySeoForAll\Integrations\RankMath\RankMathModule;
+use MySeoForAll\SEO\Context\ProviderPayloadBuilder;
+use MySeoForAll\SEO\Runtime\SeoModule;
 use MySeoForAll\WooCommerce\WooCommerceModule;
 
 // Defines Plugin class behavior for Plugin.php.
@@ -38,19 +42,24 @@ final class Plugin
         ?Configuration $configuration = null,
         ?EnvironmentCheck $environment = null,
         ?OptionStore $options = null,
-        ?array $modules = null
+        ?array $modules = null,
+        ?HookDispatcher $dispatcher = null
     ) {
         $this->container = $container ?? new Container();
         $options ??= new OptionStore();
         $configuration ??= new Configuration((array) $options->get(Configuration::OPTION_KEY, []));
         $environment ??= new EnvironmentCheck();
+        $dispatcher ??= HookDispatcher::shared();
 
         $this->container->set(Configuration::class, $configuration);
         $this->container->set(EnvironmentCheck::class, $environment);
         $this->container->set(OptionStore::class, $options);
+        $this->container->set(HookDispatcher::class, $dispatcher);
         $this->modules = $modules ?? [
-            new AdminModule($configuration, $environment, $options),
-            new WooCommerceModule(),
+            new AdminModule($configuration, $environment, $options, fn (): array => $this->health(), $dispatcher),
+            new WooCommerceModule($dispatcher),
+            new SeoModule($this->container, $dispatcher),
+            new RankMathModule($this->container, $dispatcher),
         ];
     }
 
@@ -84,16 +93,68 @@ final class Plugin
     {
         $environment = $this->container->get(EnvironmentCheck::class);
         $configuration = $this->container->get(Configuration::class);
+        $coexistence = [
+            'outputs' => [],
+            'write_allowed' => false,
+        ];
+
+        if ($this->container->has(OwnershipRegistry::class)) {
+            try {
+                $snapshot = $this->container->get(OwnershipRegistry::class)->resolve();
+                $coexistence = [
+                    'outputs' => is_array($snapshot['outputs'] ?? null) ? $snapshot['outputs'] : [],
+                    'write_allowed' => false,
+                ];
+            } catch (\Throwable) {
+                $coexistence = [
+                    'outputs' => [],
+                    'write_allowed' => false,
+                    'reason' => 'unavailable',
+                ];
+            }
+        }
 
         return [
             'plugin' => [
                 'name' => 'My SEO For All',
                 'version' => defined('MYSEO_FOR_ALL_VERSION') ? MYSEO_FOR_ALL_VERSION : '0.1.0',
             ],
-            'configuration' => $configuration->all(),
+            'configuration' => $this->safeConfiguration($configuration->all()),
             'environment' => $environment->evaluate(),
             'modules' => array_map(static fn (Module $module): array => $module->health(), $this->modules),
+            'coexistence' => $coexistence,
         ];
+    }
+
+    /**
+     * Return only the fixed scalar configuration summary allowed in diagnostics.
+     * Unknown keys and non-scalar values are excluded so raw options cannot reach health output.
+     * @param array<string,mixed> $values
+     * @return array<string,mixed>
+     */
+    private function safeConfiguration(array $values): array
+    {
+        $summary = [];
+        $mapping = [
+            'schema_version' => 'version',
+            'version' => 'version',
+            'site_language' => 'site_language',
+            'ai_enabled' => 'ai_enabled',
+            'rank_math_mode' => 'rank_math_mode',
+            'sitemap_owner' => 'sitemap_owner',
+        ];
+        foreach ($mapping as $source => $target) {
+            if (!array_key_exists($source, $values) || !is_scalar($values[$source])) {
+                continue;
+            }
+            $value = $values[$source];
+            if (is_string($value) && preg_match('/secret|token|key|password|passwd|@|\\/etc\\//i', $value) === 1) {
+                continue;
+            }
+            $summary[$target] = is_bool($value) ? $value : (string) $value;
+        }
+        ksort($summary);
+        return $summary;
     }
 
     /**

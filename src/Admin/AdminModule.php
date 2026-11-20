@@ -21,11 +21,28 @@ final class AdminModule implements Module
     /**
      * Captures the configuration, environment checker, and option boundary owned by admin screens.
      */
+    private $healthProvider;
+    private ?\MySeoForAll\Core\HookDispatcher $dispatcher;
+
+    /**
+     * Capture configuration, environment, options, and optional diagnostic wiring.
+     * The provider returns an already-redacted snapshot and is never used during settings persistence.
+     * @param Configuration $configuration
+     * @param EnvironmentCheck $environment
+     * @param OptionStore $options
+     * @param callable|null $healthProvider
+     * @param \MySeoForAll\Core\HookDispatcher|null $dispatcher
+     * @return void
+     */
     public function __construct(
         private Configuration $configuration,
         private EnvironmentCheck $environment,
-        private OptionStore $options
+        private OptionStore $options,
+        $healthProvider = null,
+        ?\MySeoForAll\Core\HookDispatcher $dispatcher = null
     ) {
+        $this->healthProvider = is_callable($healthProvider) ? $healthProvider : null;
+        $this->dispatcher = $dispatcher;
     }
 
     /**
@@ -41,12 +58,14 @@ final class AdminModule implements Module
      */
     public function boot(): void
     {
-        if (! function_exists('add_action')) {
+        if (!function_exists('add_action')) {
             return;
         }
 
-        add_action('admin_menu', [$this, 'registerMenu']);
-        add_action('admin_init', [$this, 'registerSettings']);
+        if ($this->dispatcher !== null) {
+            $this->dispatcher->addAction('admin_menu', [$this, 'registerMenu']);
+            $this->dispatcher->addAction('admin_init', [$this, 'registerSettings']);
+        }
     }
 
     /**
@@ -68,6 +87,8 @@ final class AdminModule implements Module
             'name' => 'admin',
             'available' => $this->isAvailable(),
             'message' => $this->isAvailable() ? 'Settings và Health Check sẵn sàng.' : 'WordPress admin chưa sẵn sàng.',
+            'write_allowed' => false,
+            'frontend_owned' => false,
         ];
     }
 
@@ -124,18 +145,34 @@ final class AdminModule implements Module
      */
     public function renderPage(): void
     {
-        if (! function_exists('current_user_can') || ! current_user_can('manage_options')) {
+        if (!function_exists('current_user_can') || !current_user_can('manage_options')) {
             return;
         }
 
         $statuses = $this->environment->evaluate();
-        echo '<div class="wrap"><h1>My SEO For All</h1>';
+        $diagnostics = is_callable($this->healthProvider) ? ($this->healthProvider)() : [];
+        if (is_array($diagnostics['environment'] ?? null)) {
+            $statuses = $diagnostics['environment'];
+        }
+
+        echo '<div class="wrap"><h1>' . $this->escapeHtml('My SEO For All') . '</h1>';
         echo '<form method="post" action="options.php">';
-        echo '<p>Cấu hình nền tảng theo phạm vi site.</p>';
-        echo '<h2>Health Check</h2><ul>';
+        echo '<p>' . $this->escapeHtml('Cấu hình nền tảng theo phạm vi site.') . '</p>';
+        echo '<h2>' . $this->escapeHtml('Health Check') . '</h2><ul>';
         foreach ($statuses as $status) {
-            $name = function_exists('esc_html') ? esc_html((string) $status['name']) : (string) $status['name'];
-            $message = function_exists('esc_html') ? esc_html((string) $status['message']) : (string) $status['message'];
+            if (!is_array($status)) {
+                continue;
+            }
+            $name = $this->escapeHtml((string) ($status['name'] ?? 'unknown'));
+            $message = $this->escapeHtml((string) ($status['message'] ?? 'Không có thông tin.'));
+            echo "<li><strong>{$name}</strong>: {$message}</li>";
+        }
+        foreach (($diagnostics['modules'] ?? []) as $module) {
+            if (!is_array($module)) {
+                continue;
+            }
+            $name = $this->escapeHtml((string) ($module['name'] ?? 'module'));
+            $message = $this->escapeHtml((string) ($module['message'] ?? 'Không có thông tin.'));
             echo "<li><strong>{$name}</strong>: {$message}</li>";
         }
         echo '</ul>';
@@ -146,5 +183,19 @@ final class AdminModule implements Module
             submit_button('Lưu cấu hình');
         }
         echo '</form></div>';
+    }
+
+    /**
+     * Escape diagnostic text with WordPress escaping or a deterministic standalone fallback.
+     * The fallback always encodes quotes, substitutes invalid UTF-8, and never returns raw input.
+     * @param string $text
+     * @return string
+     */
+    private function escapeHtml(string $text): string
+    {
+        if (function_exists('esc_html')) {
+            return (string) esc_html($text);
+        }
+        return htmlspecialchars($text, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
     }
 }

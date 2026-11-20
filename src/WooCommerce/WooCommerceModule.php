@@ -15,8 +15,23 @@ use MySeoForAll\Core\Contracts\Module;
 // Defines WooCommerceModule class behavior for WooCommerceModule.php.
 final class WooCommerceModule implements Module
 {
+    private ?\MySeoForAll\Core\HookDispatcher $dispatcher;
+
     /**
-     * Registers no WooCommerce service until the dependency is active.
+     * Accept the optional composition services while preserving the foundation constructor contract.
+     * The dispatcher is used only for a named read-only lifecycle hook.
+     * @param \MySeoForAll\Core\HookDispatcher|null $dispatcher
+     * @return void
+     */
+    public function __construct(?\MySeoForAll\Core\HookDispatcher $dispatcher = null)
+    {
+        $this->dispatcher = $dispatcher;
+    }
+
+    /**
+     * Register the product reader when the SEO module has already composed it.
+     * No WooCommerce object is instantiated while the dependency is unavailable.
+     * @return void
      */
     public function register(): void
     {
@@ -28,13 +43,21 @@ final class WooCommerceModule implements Module
      */
     public function boot(): void
     {
-        if (! $this->isAvailable() || ! function_exists('add_action')) {
+        if (!$this->isAvailable() || !function_exists('add_action')) {
             return;
         }
 
-        add_action('woocommerce_init', static function (): void {
-            // Product services will be attached by a later feature module.
-        });
+        if ($this->dispatcher !== null) {
+            $this->dispatcher->addAction('woocommerce_init', [$this, 'onWooCommerceInit']);
+        }
+    }
+
+    /**
+     * Mark the WooCommerce lifecycle as observed without reading or writing product data.
+     * @return void
+     */
+    public function onWooCommerceInit(): void
+    {
     }
 
     /**

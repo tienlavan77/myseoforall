@@ -23,6 +23,10 @@ final class Container
      */
     public function set(string $id, object $service): void
     {
+        if (isset($this->services[$id]) && $this->services[$id] !== $service) {
+            throw new \LogicException("Service already registered with a different instance: {$id}");
+        }
+
         $this->services[$id] = $service;
     }
 

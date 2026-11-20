@@ -1,0 +1,150 @@
+<?php
+/*
+ * Verifies Increment E composition, read-only projections, passive Rank Math
+ * probes, and duplicate hook registration behavior entirely offline.
+ */
+
+declare(strict_types=1);
+
+namespace MySeoForAll\Tests\Unit;
+
+use InvalidArgumentException;
+use MySeoForAll\Core\Container;
+use MySeoForAll\Core\HookDispatcher;
+use MySeoForAll\Core\Plugin;
+use MySeoForAll\Integrations\RankMath\RankMathCompatibilityMatrix;
+use MySeoForAll\Integrations\RankMath\RankMathDetector;
+use MySeoForAll\Integrations\RankMath\RankMathEnvironmentProbe;
+use MySeoForAll\Integrations\RankMath\WordPressRankMathProbe;
+use MySeoForAll\SEO\Context\ProviderPayloadBuilder;
+use MySeoForAll\SEO\Runtime\ContentSeoInspector;
+use MySeoForAll\SEO\Runtime\ProductSeoInspector;
+use MySeoForAll\SEO\Runtime\WordPressContentReader;
+use MySeoForAll\SEO\Runtime\WooCommerceProductReader;
+use PHPUnit\Framework\TestCase;
+
+final class RuntimeCompositionTest extends TestCase
+{
+    /**
+     * Verify the four canonical modules and all Increment E service identifiers compose offline.
+     * @return void
+     */
+    public function testCompositionRegistersCanonicalModulesAndServices(): void
+    {
+        HookDispatcher::resetShared();
+        $container = new Container();
+        $plugin = new Plugin($container, null, null, null, null, new HookDispatcher());
+        $plugin->boot();
+        $health = $plugin->health();
+
+        self::assertSame(['admin', 'woocommerce', 'seo', 'rank_math'], array_column($health['modules'], 'name'));
+        self::assertTrue($container->has(ProviderPayloadBuilder::class));
+        self::assertTrue($container->has(ContentSeoInspector::class));
+        self::assertTrue($container->has(ProductSeoInspector::class));
+        self::assertTrue($container->has(RankMathCompatibilityMatrix::class));
+        self::assertFalse($health['coexistence']['write_allowed']);
+    }
+
+    /**
+     * Verify a second service instance cannot silently replace a composition identifier.
+     * @return void
+     */
+    public function testContainerRejectsConflictingDuplicateRegistration(): void
+    {
+        $container = new Container();
+        $container->set('first', new \stdClass());
+
+        $this->expectException(\LogicException::class);
+        $container->set('first', new \stdClass());
+    }
+
+    /**
+     * Verify the dispatcher deduplicates the same hook/listener/priority tuple.
+     * @return void
+     */
+    public function testHookDispatcherDeduplicatesNamedListeners(): void
+    {
+        $dispatcher = new HookDispatcher();
+        $listener = [new class {
+            /** Handle a test hook without side effects. */
+            public function handle(): void
+            {
+            }
+        }, 'handle'];
+
+        self::assertTrue($dispatcher->addAction('diagnostics', $listener));
+        self::assertFalse($dispatcher->addAction('diagnostics', $listener));
+        self::assertCount(1, $dispatcher->registrations());
+    }
+
+    /**
+     * Verify a WordPress post snapshot reaches both local findings and a typed provider payload.
+     * @return void
+     */
+    public function testWordPressReaderProjectsArticleWithoutPlatformRuntime(): void
+    {
+        $reader = new WordPressContentReader(static fn (int $id): array => [
+            'id' => $id,
+            'post_type' => 'post',
+            'title' => 'A valid article title for local analysis',
+            'content' => '<h1>Primary</h1><h2>Section</h2>',
+            'url' => 'https://example.test/article',
+        ]);
+
+        $result = $reader->readPost(7);
+
+        self::assertSame('ok', $result['status']);
+        self::assertSame('article', $result['resource_type']);
+        self::assertNotNull($result['seo_context']);
+        self::assertIsArray($result['provider_payload']);
+        self::assertSame('article', $result['provider_payload']['type']);
+    }
+
+    /**
+     * Verify product and variation projections preserve decimal strings and reject an unknown parent.
+     * @return void
+     */
+    public function testWooCommerceReaderPreservesDecimalAndFailsClosedForParent(): void
+    {
+        $reader = new WooCommerceProductReader(static fn (int $id): array => [
+            'resource_type' => 'product',
+            'id' => $id,
+            'product_name' => 'Simple product',
+            'description' => 'A product description',
+            'price' => '199000.50',
+            'manage_stock' => false,
+            'stock_status' => 'instock',
+            'currency' => 'VND',
+            'parent_exists' => true,
+        ]);
+
+        $result = $reader->readProduct(9);
+        self::assertSame('ok', $result['status']);
+        self::assertSame('199000.50', $result['provider_payload']['price']);
+        self::assertArrayNotHasKey('stock', $result['provider_payload']);
+
+        $variationReader = new WooCommerceProductReader(static fn (int $id): array => [
+            'resource_type' => 'variation',
+            'id' => $id,
+            'product_name' => 'Variation',
+            'parent_id' => 20,
+            'variation' => ['id' => $id, 'parent_id' => 20],
+            'parent_exists' => false,
+        ]);
+        self::assertSame('parent_product_missing', $variationReader->readProduct(10)['reason']);
+    }
+
+    /**
+     * Verify the passive Rank Math bridge remains unknown without WordPress and a zero-rule matrix.
+     * @return void
+     */
+    public function testRankMathProbeFailsClosedWithoutWordPress(): void
+    {
+        $probe = new WordPressRankMathProbe();
+        $detector = new RankMathDetector(RankMathCompatibilityMatrix::shippedDefault(), $probe);
+        $result = $detector->detect();
+
+        self::assertSame('unknown', $result['compatibility']['state']);
+        self::assertSame('unobserved', $result['evidence_state']);
+    }
+}
