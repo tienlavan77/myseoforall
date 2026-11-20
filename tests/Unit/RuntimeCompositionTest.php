@@ -144,7 +144,7 @@ final class RuntimeCompositionTest extends TestCase
         $detector = new RankMathDetector(RankMathCompatibilityMatrix::shippedDefault(), $probe);
         $result = $detector->detect();
 
-        self::assertSame('unknown', $result['compatibility']['state']);
-        self::assertSame('unobserved', $result['evidence_state']);
+        self::assertSame('unknown', $result['compatibility']);
+        self::assertSame('unobserved', $result['signals']['installation']['evidence_state']);
     }
 }
