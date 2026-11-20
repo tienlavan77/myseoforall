@@ -302,7 +302,7 @@ final class OwnershipObservationNormalizer
                 return [
                     'fields' => [],
                     'evidence_state' => $this->escalateInvalid($evidenceState),
-                    'had_error' => $hasFieldsKey,
+                    'had_error' => true,
                 ];
             }
 

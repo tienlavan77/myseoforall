@@ -227,6 +227,23 @@ final class OwnershipRegistryEdgeContractTest extends TestCase
         self::assertSame('conflict', $conflictWithMalformedSubfields['outputs']['title_meta']['state']);
         self::assertSame('blocked', $conflictWithMalformedSubfields['outputs']['title_meta']['duplicate_risk']);
         self::assertSame('conflicting_evidence', $conflictWithMalformedSubfields['outputs']['title_meta']['reason']);
+
+        $missingFieldsObserved = [
+            'observation_id' => 'title-meta-missing-fields',
+            'producer' => 'rank_math',
+            'output' => 'title_meta',
+            'assertion' => 'claim',
+            'can_emit' => true,
+            'source' => 'fixture:rm',
+            'evidence_state' => 'observed',
+        ];
+        $missingFieldsDeclared = $missingFieldsObserved;
+        $missingFieldsDeclared['evidence_state'] = 'declared';
+        $missingFieldsCollision = $registry->resolve([
+            'observations' => [$missingFieldsObserved, $missingFieldsDeclared],
+        ]);
+        self::assertSame('conflict', $missingFieldsCollision['outputs']['title_meta']['state']);
+        self::assertSame('identity_collision', $missingFieldsCollision['outputs']['title_meta']['reason']);
     }
 
     /**

@@ -157,17 +157,19 @@ final class RankMathDetector
         $crossConflictReason = null;
         if ($installation['state'] === 'absent') {
             if ($activation['state'] === 'active') {
-                $crossConflictReason = 'installation_activation_conflict';
+                $crossConflictReason ??= 'installation_activation_conflict';
+                $activation = array_merge($activation, ['state' => 'unknown', 'reason' => 'installation_activation_conflict', 'evidence_state' => 'conflict']);
+            }
+            if ($version['state'] === 'known') {
+                $crossConflictReason ??= 'installation_version_conflict';
+                $version = array_merge($version, ['reason' => 'installation_version_conflict', 'evidence_state' => 'conflict']);
+            }
+            if ($this->hasPositiveCapability($capabilitiesProbe['capabilities'])) {
+                $crossConflictReason ??= 'installation_capability_conflict';
+                $capabilitiesProbe = array_merge($capabilitiesProbe, ['reason' => 'installation_capability_conflict', 'evidence_state' => 'conflict']);
+            }
+            if ($crossConflictReason !== null) {
                 $installation = array_merge($installation, ['state' => 'unknown', 'reason' => $crossConflictReason, 'evidence_state' => 'conflict']);
-                $activation = array_merge($activation, ['state' => 'unknown', 'reason' => $crossConflictReason, 'evidence_state' => 'conflict']);
-            } elseif ($version['state'] === 'known') {
-                $crossConflictReason = 'installation_version_conflict';
-                $installation = array_merge($installation, ['state' => 'unknown', 'reason' => $crossConflictReason, 'evidence_state' => 'conflict']);
-                $version = array_merge($version, ['reason' => $crossConflictReason, 'evidence_state' => 'conflict']);
-            } elseif ($this->hasPositiveCapability($capabilitiesProbe['capabilities'])) {
-                $crossConflictReason = 'installation_capability_conflict';
-                $installation = array_merge($installation, ['state' => 'unknown', 'reason' => $crossConflictReason, 'evidence_state' => 'conflict']);
-                $capabilitiesProbe = array_merge($capabilitiesProbe, ['reason' => $crossConflictReason, 'evidence_state' => 'conflict']);
             }
         }
 

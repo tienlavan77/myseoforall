@@ -350,6 +350,17 @@ final class RankMathDetectorContractTest extends TestCase
         self::assertSame('invalid', $bogusRes['signals']['activation']['evidence_state']);
         self::assertSame('invalid', $bogusRes['signals']['version']['evidence_state']);
         self::assertSame('invalid', $bogusRes['signals']['capabilities']['evidence_state']);
+
+        $allConflicting = $synDetector->evaluate($this->buildSignals('absent', 'active', '1.0.210', [
+            'read_title' => true,
+        ]), ['read_title']);
+        self::assertSame('installation_activation_conflict', $allConflicting['reason']);
+        self::assertSame('conflict', $allConflicting['signals']['installation']['evidence_state']);
+        self::assertSame('conflict', $allConflicting['signals']['activation']['evidence_state']);
+        self::assertSame('conflict', $allConflicting['signals']['version']['evidence_state']);
+        self::assertSame('conflict', $allConflicting['signals']['capabilities']['evidence_state']);
+        self::assertSame('installation_version_conflict', $allConflicting['signals']['version']['reason']);
+        self::assertSame('installation_capability_conflict', $allConflicting['signals']['capabilities']['reason']);
     }
 
     /**
