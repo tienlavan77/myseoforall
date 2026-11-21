@@ -60,11 +60,11 @@ final class EnvironmentCheck
                 'name' => 'WordPress',
                 'installed' => $wordpressLoaded,
                 'active' => $wordpressLoaded,
-                'installation' => $wordpressLoaded ? 'installed' : 'absent',
-                'activation' => $wordpressLoaded ? 'active' : 'inactive',
-                'compatible' => $wordpressLoaded,
+                'installation' => $wordpressLoaded ? 'installed' : 'unknown',
+                'activation' => $wordpressLoaded ? 'active' : 'unknown',
+                'compatible' => $wordpressLoaded ? true : 'unknown',
                 'version' => $wordpressLoaded ? (string) get_bloginfo('version') : null,
-                'message' => $wordpressLoaded ? 'WordPress sẵn sàng.' : 'WordPress chưa sẵn sàng.',
+                'message' => $wordpressLoaded ? 'WordPress sẵn sàng.' : 'WordPress chưa đủ bằng chứng runtime.',
             ],
             'woocommerce' => [
                 'name' => 'WooCommerce',
@@ -164,6 +164,11 @@ final class EnvironmentCheck
     {
         $statuses = $this->evaluate();
 
-        return $statuses['php']['compatible'] === true && $statuses['wordpress']['compatible'] === true;
+        return $statuses['php']['installation'] === 'installed'
+            && $statuses['php']['activation'] === 'active'
+            && $statuses['php']['compatible'] === true
+            && $statuses['wordpress']['installation'] === 'installed'
+            && $statuses['wordpress']['activation'] === 'active'
+            && $statuses['wordpress']['compatible'] === true;
     }
 }

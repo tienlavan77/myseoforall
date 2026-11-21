@@ -14,6 +14,26 @@ final class HookDispatcher
     private array $registrations = [];
 
     private static ?self $shared = null;
+    private $forwarder;
+
+    /**
+     * Configure an optional hook forwarder while keeping the default WordPress bridge guarded.
+     * @param callable|null $forwarder
+     * @return void
+     */
+    public function __construct(?callable $forwarder = null)
+    {
+        $this->forwarder = $forwarder;
+    }
+
+    /**
+     * Report whether this dispatcher can forward a hook in the current runtime.
+     * @return bool
+     */
+    public function canDispatch(): bool
+    {
+        return is_callable($this->forwarder) || function_exists('add_action');
+    }
 
     /**
      * Return the process-local dispatcher used by default plugin instances.
@@ -43,6 +63,12 @@ final class HookDispatcher
      */
     public function addAction(string $hook, callable|array $listener, int $priority = 10, int $acceptedArgs = 1): bool
     {
+        if ($listener instanceof \Closure) {
+            throw new \InvalidArgumentException('Anonymous hook listeners are not supported.');
+        }
+        if (!$this->canDispatch()) {
+            return false;
+        }
         $key = $this->listenerKey($listener);
         $registrationKey = $hook . '|' . $key . '|' . $priority;
         if (isset($this->registrations[$registrationKey])) {
@@ -56,7 +82,9 @@ final class HookDispatcher
             'accepted_args' => $acceptedArgs,
         ];
 
-        if (function_exists('add_action')) {
+        if (is_callable($this->forwarder)) {
+            ($this->forwarder)($hook, $listener, $priority, $acceptedArgs);
+        } elseif (function_exists('add_action')) {
             add_action($hook, $listener, $priority, $acceptedArgs);
         }
 

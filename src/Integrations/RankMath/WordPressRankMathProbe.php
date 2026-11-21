@@ -12,6 +12,15 @@ namespace MySeoForAll\Integrations\RankMath;
 
 final class WordPressRankMathProbe implements RankMathEnvironmentProbe
 {
+    private $optionReader;
+    private $pluginsReader;
+
+    /** Configure read-only WordPress bridges for deterministic probing. */
+    public function __construct(?callable $optionReader = null, ?callable $pluginsReader = null)
+    {
+        $this->optionReader = $optionReader;
+        $this->pluginsReader = $pluginsReader;
+    }
     /**
      * Observe whether Rank Math appears installed from active plugin or loaded metadata.
      * Missing WordPress APIs produce an unobserved unknown result rather than an absent claim.
@@ -19,27 +28,18 @@ final class WordPressRankMathProbe implements RankMathEnvironmentProbe
      */
     public function observeInstallation(): array
     {
-        $active = $this->activePlugins();
-        if ($active === null) {
-            return $this->unknown('installation_unavailable');
+        $plugins = is_callable($this->pluginsReader)
+            ? ($this->pluginsReader)()
+            : (function_exists('get_plugins') ? get_plugins() : null);
+        if (!is_array($plugins)) {
+            return $this->unknown('installation_metadata_unavailable');
         }
-        if ($this->containsRankMath($active)) {
-            return $this->signal('installed', 'active_plugins');
-        }
-
-        if (function_exists('get_plugins')) {
-            $plugins = get_plugins();
-            if (is_array($plugins)) {
-                foreach (array_keys($plugins) as $plugin) {
-                    if ($this->isRankMathPlugin((string) $plugin)) {
-                        return $this->signal('installed', 'plugin_metadata');
-                    }
-                }
-                return $this->signal('absent', 'plugin_metadata');
+        foreach (array_keys($plugins) as $plugin) {
+            if ($this->isRankMathPlugin((string) $plugin)) {
+                return $this->signal('installed', 'plugin_metadata');
             }
         }
-
-        return $this->unknown('installation_metadata_unavailable');
+        return $this->signal('absent', 'plugin_metadata');
     }
 
     /**
@@ -107,10 +107,12 @@ final class WordPressRankMathProbe implements RankMathEnvironmentProbe
      */
     private function activePlugins(): ?array
     {
-        if (!function_exists('get_option')) {
+        if (!function_exists('get_option') && !is_callable($this->optionReader)) {
             return null;
         }
-        $value = get_option('active_plugins', []);
+        $value = is_callable($this->optionReader)
+            ? ($this->optionReader)('active_plugins', [])
+            : get_option('active_plugins', []);
         if (!is_array($value)) {
             return null;
         }

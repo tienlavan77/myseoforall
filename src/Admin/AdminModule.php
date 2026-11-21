@@ -23,6 +23,7 @@ final class AdminModule implements Module
      */
     private $healthProvider;
     private ?\MySeoForAll\Core\HookDispatcher $dispatcher;
+    private $capabilityChecker;
 
     /**
      * Capture configuration, environment, options, and optional diagnostic wiring.
@@ -43,6 +44,7 @@ final class AdminModule implements Module
     ) {
         $this->healthProvider = is_callable($healthProvider) ? $healthProvider : null;
         $this->dispatcher = $dispatcher;
+        $this->capabilityChecker = null;
     }
 
     /**
@@ -58,7 +60,7 @@ final class AdminModule implements Module
      */
     public function boot(): void
     {
-        if (!function_exists('add_action')) {
+        if ($this->dispatcher === null || !$this->dispatcher->canDispatch()) {
             return;
         }
 
@@ -73,7 +75,7 @@ final class AdminModule implements Module
      */
     public function isAvailable(): bool
     {
-        return function_exists('add_action');
+        return $this->dispatcher !== null ? $this->dispatcher->canDispatch() : function_exists('add_action');
     }
 
     /**
@@ -187,7 +189,7 @@ final class AdminModule implements Module
         foreach (['title_meta', 'json_ld', 'sitemap', 'ai_draft'] as $output) {
             $decision = is_array(($diagnostics['coexistence']['outputs'] ?? [])[$output] ?? null)
                 ? $diagnostics['coexistence']['outputs'][$output] : [];
-            $risk = in_array($decision['duplicate_risk'] ?? null, ['none', 'possible', 'high'], true)
+            $risk = in_array($decision['duplicate_risk'] ?? null, ['none', 'possible', 'blocked'], true)
                 ? $decision['duplicate_risk'] : 'possible';
             echo '<li><strong>' . $this->escapeHtml($output) . '</strong>: '
                 . $this->escapeHtml('duplicate_risk=' . $risk) . '</li>';

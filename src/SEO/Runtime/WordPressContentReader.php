@@ -57,7 +57,7 @@ final class WordPressContentReader
         }
 
         $source = $this->normalize($raw);
-        if ($source === [] || (isset($source['id']) && (int) $source['id'] !== $postId)) {
+        if ($source === [] || !isset($source['id']) || !$this->isExactPositiveId($source['id']) || (int) $source['id'] !== $postId) {
             return $this->envelope('invalid_source', 'invalid_post_source');
         }
         $postType = (string) ($source['post_type'] ?? '');
@@ -94,6 +94,16 @@ final class WordPressContentReader
     private function load(int $postId)
     {
         return function_exists('get_post') ? get_post($postId) : null;
+    }
+
+    /**
+     * Accept only a positive integer identity without coercing dirty strings or floats.
+     * @param mixed $value
+     * @return bool
+     */
+    private function isExactPositiveId($value): bool
+    {
+        return (is_int($value) || (is_string($value) && ctype_digit($value))) && (int) $value > 0 && (string) (int) $value === (string) $value;
     }
 
     /**

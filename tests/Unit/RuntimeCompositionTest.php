@@ -64,7 +64,7 @@ final class RuntimeCompositionTest extends TestCase
      */
     public function testHookDispatcherDeduplicatesNamedListeners(): void
     {
-        $dispatcher = new HookDispatcher();
+        $dispatcher = new HookDispatcher(static function (): void {});
         $listener = [new class {
             /** Handle a test hook without side effects. */
             public function handle(): void
@@ -75,6 +75,12 @@ final class RuntimeCompositionTest extends TestCase
         self::assertTrue($dispatcher->addAction('diagnostics', $listener));
         self::assertFalse($dispatcher->addAction('diagnostics', $listener));
         self::assertCount(1, $dispatcher->registrations());
+
+        $offline = new HookDispatcher();
+        self::assertFalse($offline->addAction('diagnostics', $listener));
+        self::assertSame([], $offline->registrations());
+        $this->expectException(\InvalidArgumentException::class);
+        $dispatcher->addAction('diagnostics', static function (): void {});
     }
 
     /**
@@ -129,7 +135,6 @@ final class RuntimeCompositionTest extends TestCase
             'product_name' => 'Variation',
             'parent_id' => 20,
             'variation' => ['id' => $id, 'parent_id' => 20],
-            'parent_exists' => false,
         ]);
         self::assertSame('parent_product_missing', $variationReader->readProduct(10)['reason']);
     }

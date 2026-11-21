@@ -20,6 +20,8 @@ final class SeoModule implements Module
 {
     private Container $container;
     private HookDispatcher $dispatcher;
+    private $capabilityChecker;
+    private $wooAvailability;
 
     /**
      * Inject the composition container and request-scoped hook dispatcher.
@@ -28,10 +30,12 @@ final class SeoModule implements Module
      * @param HookDispatcher $dispatcher
      * @return void
      */
-    public function __construct(Container $container, HookDispatcher $dispatcher)
+    public function __construct(Container $container, HookDispatcher $dispatcher, $capabilityChecker = null, $wooAvailability = null)
     {
         $this->container = $container;
         $this->dispatcher = $dispatcher;
+        $this->capabilityChecker = is_callable($capabilityChecker) ? $capabilityChecker : null;
+        $this->wooAvailability = is_callable($wooAvailability) ? $wooAvailability : null;
     }
 
     /**
@@ -66,10 +70,10 @@ final class SeoModule implements Module
      */
     public function boot(): void
     {
-        if (!function_exists('add_action')) {
+        if (!$this->dispatcher->canDispatch()) {
             return;
         }
-        $this->dispatcher->addAction('add_meta_boxes', [$this, 'registerDiagnosticsSurface']);
+        $this->dispatcher->addAction('add_meta_boxes', [$this, 'registerDiagnosticsSurface'], 10, 2);
     }
 
     /**
@@ -78,7 +82,7 @@ final class SeoModule implements Module
      */
     public function isAvailable(): bool
     {
-        return function_exists('add_action');
+        return $this->dispatcher->canDispatch();
     }
 
     /**
@@ -103,12 +107,33 @@ final class SeoModule implements Module
      * Provide a named diagnostics listener without rendering or mutating platform content.
      * @return void
      */
-    public function registerDiagnosticsSurface($postId = 0): void
+    public function registerDiagnosticsSurface($postType = '', $post = null): void
     {
-        $postId = is_int($postId) ? $postId : 0;
-        if ($postId <= 0 || !$this->container->has(ContentSeoInspector::class)) {
+        if (!is_string($postType) || $postType === '' || !is_object($post) || !isset($post->ID)) {
             return;
         }
-        $this->container->get(ContentSeoInspector::class)->inspect($postId);
+        $postId = $post->ID;
+        if (!(is_int($postId) || (is_string($postId) && ctype_digit($postId))) || (int) $postId <= 0) {
+            return;
+        }
+        $postId = (int) $postId;
+        if (isset($post->post_type) && $post->post_type !== $postType) {
+            return;
+        }
+        $allowed = is_callable($this->capabilityChecker)
+            ? ($this->capabilityChecker)('edit_post', $postId)
+            : (function_exists('current_user_can') && current_user_can('edit_post', $postId));
+        if ($allowed !== true) {
+            return;
+        }
+        if (in_array($postType, ['post', 'page'], true) && $this->container->has(ContentSeoInspector::class)) {
+            $this->container->get(ContentSeoInspector::class)->inspect($postId);
+            return;
+        }
+        if (in_array($postType, ['product', 'product_variation'], true)
+            && ($this->wooAvailability === null ? function_exists('wc_get_product') : ($this->wooAvailability)())
+            && $this->container->has(ProductSeoInspector::class)) {
+            $this->container->get(ProductSeoInspector::class)->inspect($postId);
+        }
     }
 }

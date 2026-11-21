@@ -17,6 +17,8 @@ use MySeoForAll\SEO\Context\SeoContext;
 final class WooCommerceProductReader
 {
     private $loader;
+    private $parentLoader;
+    private $currencyLoader;
     private LocalSeoAnalyzer $analyzer;
     private ProviderPayloadBuilder $builder;
 
@@ -29,11 +31,15 @@ final class WooCommerceProductReader
     public function __construct(
         $loader = null,
         ?LocalSeoAnalyzer $analyzer = null,
-        ?ProviderPayloadBuilder $builder = null
+        ?ProviderPayloadBuilder $builder = null,
+        $parentLoader = null,
+        $currencyLoader = null
     ) {
         $this->loader = $loader;
         $this->analyzer = $analyzer ?? new LocalSeoAnalyzer();
         $this->builder = $builder ?? new ProviderPayloadBuilder();
+        $this->parentLoader = $parentLoader;
+        $this->currencyLoader = $currencyLoader;
     }
 
     /**
@@ -44,6 +50,9 @@ final class WooCommerceProductReader
      */
     public function readProduct(int $productId): array
     {
+        if ($productId <= 0) {
+            return $this->envelope('invalid_source', 'invalid_product_id');
+        }
         if (!is_callable($this->loader) && !function_exists('wc_get_product')) {
             return $this->envelope('unavailable', 'woocommerce_unavailable');
         }
@@ -58,9 +67,13 @@ final class WooCommerceProductReader
         if (!in_array($type, ['product', 'variation'], true)) {
             return $this->envelope('unsupported_type', 'unsupported_product_type');
         }
-        $sourceId = (int) ($source['id'] ?? 0);
-        if ($sourceId <= 0) {
+        $sourceId = $source['id'] ?? null;
+        if (!$this->isExactPositiveId($sourceId)) {
             return $this->envelope('invalid_source', 'invalid_product_id', $type);
+        }
+        $sourceId = (int) $sourceId;
+        if ($sourceId !== $productId) {
+            return $this->envelope('invalid_source', 'invalid_product_source', $type);
         }
 
         if ($type === 'variation') {
@@ -93,12 +106,32 @@ final class WooCommerceProductReader
      * @param mixed $raw
      * @return array<string,mixed>
      */
+    /**
+     * Accept only a positive integer identity without coercing dirty strings or floats.
+     * @param mixed $value
+     * @return bool
+     */
+    private function isExactPositiveId($value): bool
+    {
+        return (is_int($value) || (is_string($value) && ctype_digit($value)))
+            && (int) $value > 0
+            && (string) (int) $value === (string) $value;
+    }
+
     private function normalize($raw): array
     {
         if (is_array($raw)) {
             $source = $raw;
             if (!isset($source['resource_type']) && isset($source['type'])) {
                 $source['resource_type'] = $source['type'];
+            }
+            if (($source['resource_type'] ?? null) === 'variation') {
+                $source['variation'] = $this->dropNulls([
+                    'id' => $source['id'] ?? null,
+                    'parent_id' => $source['parent_id'] ?? null,
+                    'sku' => is_string($source['sku'] ?? null) && $source['sku'] !== '' ? $source['sku'] : null,
+                    'attributes' => $this->attributes($source['attributes'] ?? null),
+                ]);
             }
             return $this->dropNulls($source);
         }
@@ -118,10 +151,14 @@ final class WooCommerceProductReader
             }
         };
 
+        $rawId = $read($raw, 'get_id');
         $rawType = $read($raw, 'get_type');
         $type = is_string($rawType) ? trim($rawType) : '';
         $type = $type === 'simple' ? 'product' : $type;
-        $id = (int) ($read($raw, 'get_id') ?? 0);
+        if (!$this->isExactPositiveId($rawId)) {
+            return ['resource_type' => $type, 'id' => $rawId];
+        }
+        $id = (int) $rawId;
         $parentId = (int) ($read($raw, 'get_parent_id') ?? 0);
         $manageStock = $read($raw, 'get_manage_stock');
         $stockQuantity = $read($raw, 'get_stock_quantity', 'edit');
@@ -141,20 +178,20 @@ final class WooCommerceProductReader
             'manage_stock' => $manageStock,
             'stock_quantity' => $stockQuantity,
             'stock_status' => $stockStatus,
-            'currency' => $read($raw, 'get_woocommerce_currency')
-                ?? (function_exists('get_woocommerce_currency') ? get_woocommerce_currency() : null),
+            'currency' => $this->readCurrency($raw, $read),
             'url' => $read($raw, 'get_permalink'),
             'parent_id' => $parentId,
             'attributes' => $read($raw, 'get_attributes'),
         ];
 
         if ($type === 'variation') {
-            $source['variation'] = [
+            $variation = [
                 'id' => $id,
                 'parent_id' => $parentId,
-                'sku' => $source['sku'],
-                'attributes' => $source['attributes'],
+                'sku' => is_string($source['sku'] ?? null) && $source['sku'] !== '' ? $source['sku'] : null,
+                'attributes' => $this->attributes($source['attributes'] ?? null),
             ];
+            $source['variation'] = $this->dropNulls($variation);
         }
 
         return $this->dropNulls($source);
@@ -285,6 +322,14 @@ final class WooCommerceProductReader
         foreach ($value as $name => $item) {
             if (is_array($item) && isset($item['name'], $item['value'])) {
                 $result[] = ['name' => (string) $item['name'], 'value' => (string) $item['value']];
+            } elseif (is_object($item) && method_exists($item, 'get_name') && method_exists($item, 'get_options')) {
+                $itemName = (string) $item->get_name();
+                $options = $item->get_options();
+                foreach (is_array($options) ? $options : [] as $option) {
+                    if (is_scalar($option)) {
+                        $result[] = ['name' => $itemName, 'value' => (string) $option];
+                    }
+                }
             } elseif (is_scalar($item)) {
                 $result[] = ['name' => (string) $name, 'value' => (string) $item];
             }
@@ -293,7 +338,21 @@ final class WooCommerceProductReader
     }
 
     /**
-     * Confirm a variation parent through the platform API or an explicit fixture flag.
+     * Read currency through the injected platform port, then the guarded platform function.
+     * @param object $raw
+     * @param callable $read
+     * @return mixed
+     */
+    private function readCurrency(object $raw, callable $read)
+    {
+        if (is_callable($this->currencyLoader)) {
+            return ($this->currencyLoader)();
+        }
+        return function_exists('get_woocommerce_currency') ? get_woocommerce_currency() : null;
+    }
+
+    /**
+     * Confirm a variation parent through an injected platform port or an explicit fixture flag.
      * @param int $parentId
      * @param array<string,mixed> $source
      * @return bool
@@ -303,14 +362,30 @@ final class WooCommerceProductReader
         if ($parentId <= 0) {
             return false;
         }
-        if (array_key_exists('parent_exists', $source)) {
-            return $source['parent_exists'] === true;
-        }
-        if (!function_exists('wc_get_product')) {
+        $parent = is_callable($this->parentLoader)
+            ? ($this->parentLoader)($parentId)
+            : (is_callable($this->loader)
+                ? ($this->loader)($parentId)
+                : (function_exists('wc_get_product') ? wc_get_product($parentId) : null));
+        if ($parent === null || $parent === false) {
             return false;
         }
-        $parent = wc_get_product($parentId);
-        return $parent !== false && $parent !== null;
+        if (is_array($parent)) {
+            $parentSource = $parent;
+            $parentType = (string) ($parentSource['resource_type'] ?? $parentSource['type'] ?? '');
+            $parentSourceId = $parentSource['id'] ?? null;
+        } elseif (is_object($parent)) {
+            $parentType = method_exists($parent, 'get_type') ? (string) $parent->get_type() : '';
+            $parentSourceId = method_exists($parent, 'get_id') ? $parent->get_id() : null;
+        } else {
+            return false;
+        }
+        if ($parentType === 'simple') {
+            $parentType = 'product';
+        }
+        return in_array($parentType, ['product', 'variable'], true)
+            && (is_int($parentSourceId) || (is_string($parentSourceId) && ctype_digit($parentSourceId)))
+            && (int) $parentSourceId === $parentId;
     }
 
     /**

@@ -47,6 +47,15 @@
 
 - tests/Unit/IncrementER2SafetyTest.php: 71a195b38d0055ddd1b140d30216cd65f0c347837882b56c9d3a0cbab1f165b7
 
-## Giới hạn
+## Bổ sung sau snapshot: kiểm tra ID sản phẩm (E2-3)
 
-Đây là xác minh offline trên snapshot đã nêu. PHPUnit không chứng minh tương thích production WordPress/WooCommerce/Rank Math, không chứng minh callback forwarding trong một request WordPress thật, và không tự đóng gate C/D/E hoặc mở F–H. Default Rank Math catalog/matrix vẫn zero-rule; không thêm mapping production hay quyền ghi.
+- `WooCommerceProductReader::readProduct()` từ chối ID yêu cầu không dương trước khi truy cập loader. Nếu loader trả về sản phẩm có ID khác ID đã yêu cầu, reader trả `invalid_source` với lý do `invalid_product_source` trước khi đọc parent hoặc phân tích sản phẩm.
+- `RuntimeReaderSmokeTest::testProductIdentifierValidation()` thêm hai ca hồi quy cho ID bằng 0 và ID không khớp. Hai thay đổi này đang ở working tree trên HEAD `2f5e32765b7d26ad357db0741fa4561f862524a7`.
+- SHA-256 hiện tại: `src/SEO/Runtime/WooCommerceProductReader.php`: `204f41c8b0058a18cec51acb23d58d1249ec03d707876f1835cf76e8b31ff0c9`; `tests/Unit/RuntimeReaderSmokeTest.php`: `2ac377275d2971c546c8509be07213d6c03c7dca70f9cab9a528847a864af110`.
+- Checkpoint ghi nhận Forge hoàn tất lời gọi `run_check` bước 41 sau hai chỉnh sửa, nhưng chỉ giữ hash kết quả, không giữ command, run ID hay exit code. Chưa xác nhận kết quả cho hai thay đổi này. Các lượt pass trong bảng trên thuộc lượt triển khai trước và không áp dụng cho working tree hiện tại.
+
+## Giới hạn và bàn giao
+
+Báo cáo ghi nhận phần đã sửa; bằng chứng hiện có chưa đủ để nghiệm thu E-r2. Cần xác nhận bộ test qua cổng platform cho các trường hợp đọc đối tượng thật kiểu post/page/simple product/variation, đường callback admin sau kiểm quyền, forwarding khi boot lặp, và spy tại những cổng thực sự được gọi để kiểm tra không đăng ký frontend, không truy cập mạng và không ghi dữ liệu. Cần biên nhận focused O1–O4 và full `tests/Unit` trên cùng snapshot source/test cuối, với revision, base thực chạy, scope, run ID, trạng thái và exit code.
+
+Xác minh offline không chứng minh tương thích production WordPress/WooCommerce/Rank Math. Catalog/matrix Rank Math mặc định vẫn zero-rule. Bàn giao cho Reviewer đánh giá đúng revision và Owner quyết định nghiệm thu; báo cáo không đóng gate C/D/E hay mở F–H.

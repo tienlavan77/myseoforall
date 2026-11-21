@@ -56,19 +56,59 @@ final class RuntimeReaderSmokeTest extends TestCase
     }
 
     /**
+     * Verify product identifiers are positive and match the loaded snapshot.
+     * @return void
+     */
+    public function testProductIdentifierValidation(): void
+    {
+        $reader = new WooCommerceProductReader(static fn (int $id): array => [
+            'resource_type' => 'product',
+            'id' => 99,
+            'product_name' => 'Mismatched product',
+        ]);
+
+        self::assertSame('invalid_product_id', $reader->readProduct(0)['reason']);
+        self::assertSame('invalid_product_source', $reader->readProduct(9)['reason']);
+    }
+
+    /**
      * Verify a variation with an unconfirmed parent fails closed.
      * @return void
      */
     public function testVariationParentProjection(): void
     {
+        $parentCalls = 0;
+        $reader = new WooCommerceProductReader(
+            static fn (int $id): array => [
+                'resource_type' => 'variation',
+                'id' => $id,
+                'product_name' => 'Variation',
+                'parent_id' => 20,
+                'variation' => ['id' => $id, 'parent_id' => 20],
+            ],
+            null,
+            null,
+            static function (int $id) use (&$parentCalls): array {
+                $parentCalls++;
+                return ['resource_type' => 'product', 'id' => $id];
+            }
+        );
+        $result = $reader->readProduct(10);
+        self::assertSame('ok', $result['status']);
+        self::assertSame(1, $parentCalls);
+    }
+
+    /**
+     * Verify malformed source identifiers are rejected before helper reads.
+     * @return void
+     */
+    public function testMalformedProductIdentifierIsRejected(): void
+    {
         $reader = new WooCommerceProductReader(static fn (int $id): array => [
-            'resource_type' => 'variation',
-            'id' => $id,
-            'product_name' => 'Variation',
-            'parent_id' => 20,
-            'variation' => ['id' => $id, 'parent_id' => 20],
-            'parent_exists' => false,
+            'resource_type' => 'product',
+            'id' => '9abc',
+            'product_name' => 'Malformed',
         ]);
-        self::assertSame('parent_product_missing', $reader->readProduct(10)['reason']);
+        self::assertSame('invalid_product_id', $reader->readProduct(9)['reason']);
     }
 }

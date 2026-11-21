@@ -139,7 +139,9 @@ final class Plugin
                 'installation' => $installation,
                 'activation' => $activation,
                 'compatible' => $compatible,
-                'version' => isset($status['version']) && is_string($status['version']) ? $status['version'] : null,
+                'version' => isset($status['version']) && is_string($status['version'])
+                    && preg_match('/^[0-9][A-Za-z0-9._+-]{0,31}$/', $status['version']) === 1
+                    ? $status['version'] : null,
                 'message' => $this->safeStatusMessage($name, $installation, $activation, $compatible),
             ];
             if ($name === 'mbstring') {
@@ -186,8 +188,9 @@ final class Plugin
             'message' => $name === 'rank_math'
                 ? 'Rank Math chỉ được đọc thụ động; chưa chứng minh tương thích.'
                 : (($module['available'] ?? false) === true ? $name . ' sẵn sàng.' : $name . ' chưa sẵn sàng.'),
-            'write_allowed' => ($module['write_allowed'] ?? false) === true,
-            'frontend_owned' => ($module['frontend_owned'] ?? false) === true,
+            'write_allowed' => false,
+            'frontend_owned' => false,
+            'dependency_ready' => $name === 'rank_math' && (($module['dependency_ready'] ?? false) === true),
             'compatibility' => in_array($module['compatibility'] ?? null, ['compatible', 'incompatible', 'unknown'], true)
                 ? $module['compatibility'] : 'unknown',
         ];
@@ -206,12 +209,18 @@ final class Plugin
         foreach ($allowedOutputs as $output) {
             $decision = is_array($sourceOutputs[$output] ?? null) ? $sourceOutputs[$output] : [];
             $outputs[$output] = [
-                'owner' => is_string($decision['owner'] ?? null) ? $decision['owner'] : 'unknown',
-                'state' => in_array($decision['state'] ?? null, ['owned', 'unknown', 'conflict', 'excluded'], true)
+                'owner' => in_array($decision['owner'] ?? null, [
+                    'unknown', 'myseo_for_all', 'rank_math', 'yoast_seo', 'aioseo', 'seopress', 'the_seo_framework',
+                ], true) ? $decision['owner'] : 'unknown',
+                'state' => in_array($decision['state'] ?? null, ['owned', 'unknown', 'conflict'], true)
                     ? $decision['state'] : 'unknown',
-                'duplicate_risk' => in_array($decision['duplicate_risk'] ?? null, ['none', 'possible', 'high'], true)
+                'duplicate_risk' => in_array($decision['duplicate_risk'] ?? null, ['none', 'possible', 'blocked'], true)
                     ? $decision['duplicate_risk'] : 'possible',
-                'reason' => is_string($decision['reason'] ?? null) ? $decision['reason'] : 'unavailable',
+                'reason' => in_array($decision['reason'] ?? null, [
+                    'identity_collision', 'assertion_capability_conflict', 'conflicting_evidence',
+                    'overlapping_claims', 'split_ownership', 'partial_ownership', 'no_valid_claim',
+                    'other_emitters_excluded', 'other_emitters_not_excluded', 'invalid_context_scope', 'unavailable',
+                ], true) ? $decision['reason'] : 'unavailable',
                 'write_allowed' => false,
             ];
         }

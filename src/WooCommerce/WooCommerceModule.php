@@ -16,6 +16,7 @@ use MySeoForAll\Core\Contracts\Module;
 final class WooCommerceModule implements Module
 {
     private ?\MySeoForAll\Core\HookDispatcher $dispatcher;
+    private $availabilityProbe;
     private bool $lifecycleObserved = false;
 
     /**
@@ -27,6 +28,7 @@ final class WooCommerceModule implements Module
     public function __construct(?\MySeoForAll\Core\HookDispatcher $dispatcher = null)
     {
         $this->dispatcher = $dispatcher;
+        $this->availabilityProbe = null;
     }
 
     /**
@@ -44,7 +46,7 @@ final class WooCommerceModule implements Module
      */
     public function boot(): void
     {
-        if (!$this->isAvailable() || !function_exists('add_action')) {
+        if (!$this->isAvailable() || $this->dispatcher === null || !$this->dispatcher->canDispatch()) {
             return;
         }
 
@@ -67,7 +69,9 @@ final class WooCommerceModule implements Module
      */
     public function isAvailable(): bool
     {
-        return class_exists('WooCommerce') || defined('WC_VERSION');
+        return is_callable($this->availabilityProbe)
+            ? (($this->availabilityProbe)() === true)
+            : (class_exists('WooCommerce') || defined('WC_VERSION'));
     }
 
     /**
