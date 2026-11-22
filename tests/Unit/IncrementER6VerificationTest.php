@@ -171,4 +171,124 @@ final class IncrementER6VerificationTest extends TestCase
         self::assertStringContainsString('fallback UTF-8 deterministic', $html);
         self::assertStringNotContainsString('<script>bad</script>', $html);
     }
+
+    /**
+     * Confirms object-backed post, page, product, and variation projections remain typed.
+     */
+    public function testObjectBackedFourResources(): void
+    {
+        $postLoader = static fn (int $id): object => (object) [
+            'ID' => $id,
+            'post_type' => $id === 1 ? 'post' : 'page',
+            'post_title' => $id === 1 ? 'Post title' : 'Page title',
+            'post_content' => '<h1>Heading</h1><p>Body</p>',
+            'post_excerpt' => 'Excerpt',
+            'post_name' => 'bai-viet-slug',
+            'unexpected' => 'ignored',
+        ];
+        $contentReader = new \MySeoForAll\SEO\Runtime\WordPressContentReader(
+            $postLoader,
+            null,
+            null,
+            static fn (int $id): string => 'https://example.test/' . $id
+        );
+        $post = $contentReader->readPost(1);
+        $page = $contentReader->readPost(2);
+        self::assertSame('ok', $post['status']);
+        self::assertSame('ok', $page['status']);
+        self::assertNotEmpty($post['findings']);
+        self::assertNotEmpty($page['findings']);
+        (new \MySeoForAll\SEO\Context\ProviderPayloadBuilder())->validatePayload($post['provider_payload']);
+        (new \MySeoForAll\SEO\Context\ProviderPayloadBuilder())->validatePayload($page['provider_payload']);
+
+        $productClass = new class {
+            /** Return the object identifier. */
+            public function get_id(): int { return 3; }
+            /** Return the simple product type. */
+            public function get_type(): string { return 'simple'; }
+            /** Return the product name. */
+            public function get_name(): string { return 'Simple product'; }
+            /** Return the description. */
+            public function get_description(): string { return 'Description'; }
+            /** Return the short description. */
+            public function get_short_description(): string { return 'Short'; }
+            /** Return the SKU. */
+            public function get_sku(): ?string { return 'SKU-3'; }
+            /** Return the decimal price. */
+            public function get_price(string $context = 'view'): string { return '10.00'; }
+            /** Return whether stock is managed. */
+            public function get_manage_stock(): bool { return true; }
+            /** Return the stock quantity. */
+            public function get_stock_quantity(string $context = 'view'): int { return 0; }
+            /** Return the stock status. */
+            public function get_stock_status(string $context = 'view'): string { return 'instock'; }
+            /** Return the product permalink. */
+            public function get_permalink(): string { return 'https://example.test/product/3'; }
+            /** Return product attributes. */
+            public function get_attributes(): array { return []; }
+        };
+        $productReader = new \MySeoForAll\SEO\Runtime\WooCommerceProductReader(
+            static fn (int $id) => $productClass,
+            null,
+            null,
+            null,
+            static fn (): string => 'USD'
+        );
+        $product = $productReader->readProduct(3);
+        self::assertSame('ok', $product['status']);
+        self::assertNotEmpty($product['findings']);
+        self::assertSame(0, $product['provider_payload']['stock']);
+        (new \MySeoForAll\SEO\Context\ProviderPayloadBuilder())->validatePayload($product['provider_payload']);
+
+        $variationClass = new class {
+            /** Return the variation identifier. */
+            public function get_id(): int { return 4; }
+            /** Return the variation type. */
+            public function get_type(): string { return 'variation'; }
+            /** Return the parent identifier. */
+            public function get_parent_id(): int { return 3; }
+            /** Return the variation name. */
+            public function get_name(): string { return 'Variation'; }
+            /** Return the variation description. */
+            public function get_description(): string { return 'Variation description'; }
+            /** Return the variation short description. */
+            public function get_short_description(): string { return ''; }
+            /** Return the variation SKU. */
+            public function get_sku(): ?string { return null; }
+            /** Return the variation price. */
+            public function get_price(string $context = 'view'): string { return '11.00'; }
+            /** Return whether variation stock is managed. */
+            public function get_manage_stock(): bool { return false; }
+            /** Return the variation stock quantity. */
+            public function get_stock_quantity(string $context = 'view'): ?int { return null; }
+            /** Return the variation stock status. */
+            public function get_stock_status(string $context = 'view'): string { return 'instock'; }
+            /** Return the variation permalink. */
+            public function get_permalink(): string { return 'https://example.test/product/4'; }
+            /** Return variation attributes. */
+            public function get_attributes(): array { return []; }
+        };
+        $parentCalls = 0;
+        $variationReader = new \MySeoForAll\SEO\Runtime\WooCommerceProductReader(
+            static fn (int $id) => $variationClass,
+            null,
+            null,
+            static function (int $id) use (&$parentCalls): object {
+                $parentCalls++;
+                return new class($id) {
+                    /** Store the parent identifier. */
+                    public function __construct(private int $id) {}
+                    /** Return the parent identifier. */
+                    public function get_id(): int { return $this->id; }
+                    /** Return the variable product type. */
+                    public function get_type(): string { return 'variable'; }
+                };
+            },
+            static fn (): string => 'USD'
+        );
+        $variation = $variationReader->readProduct(4);
+        self::assertSame('ok', $variation['status']);
+        self::assertSame(1, $parentCalls);
+        (new \MySeoForAll\SEO\Context\ProviderPayloadBuilder())->validatePayload($variation['provider_payload']);
+    }
 }
