@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 namespace MySeoForAll\Admin;
 
+use MySeoForAll\AI\AiSettingsController;
 use MySeoForAll\Core\Configuration\Configuration;
 use MySeoForAll\Core\Contracts\Module;
 use MySeoForAll\Core\Environment\EnvironmentCheck;
@@ -24,6 +25,7 @@ final class AdminModule implements Module
     private $healthProvider;
     private ?\MySeoForAll\Core\HookDispatcher $dispatcher;
     private $capabilityChecker;
+    private ?AiSettingsController $aiController;
 
     /**
      * Capture configuration, environment, options, and optional diagnostic wiring.
@@ -41,8 +43,10 @@ final class AdminModule implements Module
         private OptionStore $options,
         $healthProvider = null,
         ?\MySeoForAll\Core\HookDispatcher $dispatcher = null,
-        ?callable $capabilityChecker = null
+        ?callable $capabilityChecker = null,
+        ?AiSettingsController $aiController = null
     ) {
+        $this->aiController = $aiController;
         $this->healthProvider = is_callable($healthProvider) ? $healthProvider : null;
         $this->dispatcher = $dispatcher;
         $this->capabilityChecker = $capabilityChecker;
@@ -68,6 +72,9 @@ final class AdminModule implements Module
         if ($this->dispatcher !== null) {
             $this->dispatcher->addAction('admin_menu', [$this, 'registerMenu']);
             $this->dispatcher->addAction('admin_init', [$this, 'registerSettings']);
+            if ($this->aiController !== null) {
+                $this->aiController->register($this->dispatcher);
+            }
         }
     }
 
@@ -158,9 +165,30 @@ final class AdminModule implements Module
         $diagnostics = is_callable($this->healthProvider) ? ($this->healthProvider)() : [];
         $statuses = is_array($diagnostics['environment'] ?? null)
             ? $diagnostics['environment'] : $this->environment->evaluate();
+        $aiState = $this->aiController !== null ? $this->aiController->viewState() : [];
 
         echo '<div class="wrap"><h1>' . $this->escapeHtml('My SEO For All') . '</h1>';
-        echo '<form method="post" action="options.php">';
+        echo '<form method="post" action="' . $this->escapeHtml(function_exists('admin_url') ? (string) admin_url('admin-post.php') : 'admin-post.php') . '">';
+        echo '<input type="hidden" name="action" value="myseo_save_ai_settings">';
+        echo '<input type="hidden" name="ai_enabled_present" value="1">';
+        echo '<input type="hidden" name="expected_revision" value="' . $this->escapeHtml((string) ($aiState['revision'] ?? 0)) . '">';
+        if (function_exists('wp_nonce_field')) {
+            wp_nonce_field('myseo_save_ai_settings');
+        }
+        echo '<label><input type="checkbox" name="ai_enabled" value="1" ' . (($aiState['ai_enabled'] ?? false) === true ? 'checked' : '') . '> AI enabled</label>';
+        echo '<label>Base URL <input type="url" name="base_url" value="' . $this->escapeHtml((string) ($aiState['base_url'] ?? '')) . '"></label>';
+        echo '<label>Auth scheme <input type="text" name="auth_scheme" value="' . $this->escapeHtml((string) ($aiState['auth_scheme'] ?? 'x_api_key')) . '"></label>';
+        echo '<label>Default model <input type="text" name="default_model" value="' . $this->escapeHtml((string) ($aiState['default_model'] ?? '')) . '"></label>';
+        echo '<label>Allowed models <input type="text" name="allowed_models" value="' . $this->escapeHtml(implode(',', is_array($aiState['allowed_models'] ?? null) ? $aiState['allowed_models'] : [])) . '"></label>';
+        echo '<label>Timeout <input type="number" name="timeout_seconds" value="' . $this->escapeHtml((string) ($aiState['timeout_seconds'] ?? 20)) . '"></label>';
+        echo '<label>Retries <input type="number" name="max_retries" value="' . $this->escapeHtml((string) ($aiState['max_retries'] ?? 1)) . '"></label>';
+        echo '<label>API key <input type="password" name="api_key" value="" autocomplete="new-password"></label>';
+        echo '<label><input type="checkbox" name="clear_api_key" value="1"> Xóa API key đã lưu</label>';
+        echo '<p>' . $this->escapeHtml('Credential status: ' . (string) ($aiState['credential_status'] ?? 'unknown')) . '</p>';
+        if (function_exists('submit_button')) {
+            submit_button('Lưu AI settings');
+        }
+        echo '</form>';
         echo '<p>' . $this->escapeHtml('Cấu hình nền tảng theo phạm vi site.') . '</p>';
         echo '<h2>' . $this->escapeHtml('Health Check') . '</h2><ul>';
         foreach (['php', 'wordpress', 'woocommerce', 'mbstring'] as $key) {
@@ -216,6 +244,7 @@ final class AdminModule implements Module
                 . $this->escapeHtml('owner=' . $owner . '; state=' . $state . '; duplicate_risk=' . $risk) . '</li>';
         }
         echo '</ul>';
+        echo '<form method="post" action="' . $this->escapeHtml(function_exists('admin_url') ? (string) admin_url('options.php') : 'options.php') . '">';
         if (function_exists('settings_fields')) {
             settings_fields('myseo_for_all');
         }

@@ -54,9 +54,15 @@ final class Plugin
         $this->container->set(Configuration::class, $configuration);
         $this->container->set(EnvironmentCheck::class, $environment);
         $this->container->set(OptionStore::class, $options);
+        $aiSettings = new \MySeoForAll\AI\AiSettingsRepository($options);
+        $this->container->set(\MySeoForAll\AI\AiSettingsRepository::class, $aiSettings);
+        $this->container->set(
+            \MySeoForAll\AI\AiSettingsController::class,
+            new \MySeoForAll\AI\AiSettingsController($aiSettings)
+        );
         $this->container->set(HookDispatcher::class, $dispatcher);
         $this->modules = $modules ?? [
-            new AdminModule($configuration, $environment, $options, fn (): array => $this->health(), $dispatcher),
+            new AdminModule($configuration, $environment, $options, fn (): array => $this->health(), $dispatcher, null, $this->container->get(\MySeoForAll\AI\AiSettingsController::class)),
             new WooCommerceModule($dispatcher),
             new SeoModule($this->container, $dispatcher),
             new RankMathModule($this->container, $dispatcher),
@@ -110,8 +116,27 @@ final class Plugin
             ],
             'configuration' => $this->safeConfiguration($configuration->all()),
             'environment' => $this->safeEnvironment($environment->evaluate()),
+            'ai' => $this->safeAiHealth(),
             'modules' => array_map(fn (Module $module): array => $this->safeModule($module->health()), $this->modules),
             'coexistence' => $this->safeCoexistence($snapshot),
+        ];
+    }
+
+    /**
+     * Expose only the fixed AI readiness and credential enums required by health checks.
+     * This method never returns gateway URLs, models, fingerprints, or encrypted envelope data.
+     */
+    private function safeAiHealth(): array
+    {
+        $repository = $this->container->get(\MySeoForAll\AI\AiSettingsRepository::class);
+        $loaded = $repository->load();
+        $credential = $repository->credentialStatus()['status'] ?? 'absent';
+        $allowedCredential = ['absent', 'configured', 'environment', 'invalid_environment', 'corrupted', 'decryption_failed'];
+        return [
+            'ai_enabled' => $loaded['status'] === 'ok' && ($loaded['settings']['ai_enabled'] ?? false) === true,
+            'ai_configured' => in_array($credential, ['configured', 'environment'], true),
+            'ai_settings_state' => in_array($loaded['status'], ['absent', 'ok', 'corrupted'], true) ? $loaded['status'] : 'corrupted',
+            'ai_credential_state' => in_array($credential, $allowedCredential, true) ? $credential : 'corrupted',
         ];
     }
 
@@ -247,9 +272,6 @@ final class Plugin
         if (is_string($locale) && preg_match('/^[a-z]{2}(?:_[A-Z]{2})?$/', $locale) === 1) {
             $summary['site_language'] = $locale;
         }
-        if (is_bool($values['ai_enabled'] ?? null)) {
-            $summary['ai_enabled'] = $values['ai_enabled'];
-        }
         if (in_array($values['rank_math_mode'] ?? null, ['observe', 'disabled', 'unknown'], true)) {
             $summary['rank_math_mode'] = $values['rank_math_mode'];
         }
@@ -266,9 +288,13 @@ final class Plugin
     public static function activate(): void
     {
         $options = new OptionStore();
-        $existing = $options->get(Configuration::OPTION_KEY, []);
-        $configuration = new Configuration(is_array($existing) ? $existing : []);
-        $options->update(Configuration::OPTION_KEY, $configuration->all());
+        $existing = $options->get(Configuration::OPTION_KEY, null);
+        $repository = new \MySeoForAll\AI\AiSettingsRepository($options);
+        if ($existing === null || $existing === false || $existing === []) {
+            $options->update(Configuration::OPTION_KEY, Configuration::defaults());
+        } else {
+            $repository->purgeLegacyCoreKeys(is_array($existing) ? $existing : null);
+        }
     }
 
     /**
