@@ -207,8 +207,11 @@ final class AdminModule implements Module
                 ? $diagnostics['coexistence']['outputs'][$output] : [];
             $risk = in_array($decision['duplicate_risk'] ?? null, ['none', 'possible', 'blocked'], true)
                 ? $decision['duplicate_risk'] : 'possible';
-            $owner = is_string($decision['owner'] ?? null) ? $decision['owner'] : 'unknown';
-            $state = is_string($decision['state'] ?? null) ? $decision['state'] : 'unknown';
+            $owner = in_array($decision['owner'] ?? null, [
+                'unknown', 'myseo_for_all', 'rank_math', 'yoast_seo', 'aioseo', 'seopress', 'the_seo_framework',
+            ], true) ? $decision['owner'] : 'unknown';
+            $state = in_array($decision['state'] ?? null, ['owned', 'unknown', 'conflict'], true)
+                ? $decision['state'] : 'unknown';
             echo '<li><strong>' . $this->escapeHtml($output) . '</strong>: '
                 . $this->escapeHtml('owner=' . $owner . '; state=' . $state . '; duplicate_risk=' . $risk) . '</li>';
         }

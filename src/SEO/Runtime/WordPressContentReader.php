@@ -72,6 +72,17 @@ final class WordPressContentReader
             return $this->envelope('unsupported_type', 'unsupported_post_type');
         }
 
+        if (!isset($source['url'])) {
+            if (is_callable($this->permalinkLoader)) {
+                $source['url'] = ($this->permalinkLoader)($postId);
+            } elseif (function_exists('get_permalink')) {
+                $source['url'] = get_permalink($postId);
+            }
+        }
+        if (!isset($source['title']) && function_exists('get_the_title')) {
+            $source['title'] = get_the_title($postId);
+        }
+
         $resourceType = $postType === 'page' ? 'page' : 'article';
         $source = $this->filterSource($source);
         $this->seoProvenance = [];
@@ -139,17 +150,6 @@ final class WordPressContentReader
             }
         } else {
             return [];
-        }
-
-        if (!isset($source['url']) && isset($source['id']) && $this->isExactPositiveId($source['id'])) {
-            if (is_callable($this->permalinkLoader)) {
-                $source['url'] = ($this->permalinkLoader)((int) $source['id']);
-            } elseif (function_exists('get_permalink')) {
-                $source['url'] = get_permalink((int) $source['id']);
-            }
-        }
-        if (!isset($source['title']) && isset($source['id']) && function_exists('get_the_title') && $this->isExactPositiveId($source['id'])) {
-            $source['title'] = get_the_title((int) $source['id']);
         }
 
         return $this->dropNulls($source);

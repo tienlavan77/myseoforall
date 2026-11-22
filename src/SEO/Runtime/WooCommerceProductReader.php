@@ -442,6 +442,8 @@ final class WooCommerceProductReader
         foreach ($source as $key => $value) {
             if ($value === null) {
                 unset($source[$key]);
+            } elseif (is_array($value)) {
+                $source[$key] = $this->dropNulls($value);
             }
         }
         return $source;
