@@ -110,8 +110,12 @@ final class EnvironmentCheck
                 ? $value['activation'] : 'unknown';
             $compatible = in_array($value['compatible'] ?? null, [true, false, 'unknown'], true)
                 ? $value['compatible'] : 'unknown';
-            $version = isset($value['version']) && is_string($value['version']) ? trim($value['version']) : null;
-            if ($version === '') {
+            $rawVersion = $value['version'] ?? null;
+            $version = is_int($rawVersion) && $rawVersion > 0
+                ? (string) $rawVersion
+                : (is_string($rawVersion) ? trim($rawVersion) : null);
+            if ($version === '' || !is_string($version)
+                || preg_match('/^[0-9][A-Za-z0-9._+-]{0,31}$/', $version) !== 1) {
                 $version = null;
             }
 

@@ -14,13 +14,16 @@ final class WordPressRankMathSourceObserver implements RankMathSourceObserver
 {
     /** @var list<string> */
     private array $allowedSlots;
+    private $metaExists;
+    private $metaReader;
+    private $capabilityChecker;
 
     /**
      * Restrict runtime reads to explicitly approved mapping slots.
      * @param list<string> $allowedSlots
      * @return void
      */
-    public function __construct(array $allowedSlots = [])
+    public function __construct(array $allowedSlots = [], ?callable $metaExists = null, ?callable $metaReader = null, ?callable $capabilityChecker = null)
     {
         $this->allowedSlots = [];
         foreach ($allowedSlots as $slot) {
@@ -29,6 +32,9 @@ final class WordPressRankMathSourceObserver implements RankMathSourceObserver
             }
         }
         $this->allowedSlots = array_values(array_unique($this->allowedSlots));
+        $this->metaExists = $metaExists;
+        $this->metaReader = $metaReader;
+        $this->capabilityChecker = $capabilityChecker;
     }
 
     /**
@@ -44,11 +50,24 @@ final class WordPressRankMathSourceObserver implements RankMathSourceObserver
         if ($postId <= 0 || $slotKey === '' || !in_array($slotKey, $this->allowedSlots, true)) {
             return $this->unreadable('unmapped_source');
         }
-        if (!function_exists('metadata_exists') || !function_exists('get_post_meta')) {
+
+        if (is_callable($this->capabilityChecker)) {
+            if (($this->capabilityChecker)('edit_post', $postId) !== true) {
+                return $this->unreadable('unauthorized_source');
+            }
+        } elseif (function_exists('current_user_can') && current_user_can('edit_post', $postId) !== true) {
+            return $this->unreadable('unauthorized_source');
+        }
+
+        $hasInjectedBridge = is_callable($this->metaExists) && is_callable($this->metaReader);
+        $hasWordPressBridge = function_exists('metadata_exists') && function_exists('get_post_meta');
+        if (!$hasInjectedBridge && !$hasWordPressBridge) {
             return $this->unreadable('wordpress_metadata_unavailable');
         }
 
-        $present = metadata_exists('post', $postId, $slotKey);
+        $present = $hasInjectedBridge
+            ? ($this->metaExists)('post', $postId, $slotKey)
+            : metadata_exists('post', $postId, $slotKey);
         if (!$present) {
             return [
                 'presence' => 'missing',
@@ -64,7 +83,9 @@ final class WordPressRankMathSourceObserver implements RankMathSourceObserver
         return [
             'presence' => 'present',
             'can_confirm_presence' => true,
-            'value' => get_post_meta($postId, $slotKey, true),
+            'value' => $hasInjectedBridge
+                ? ($this->metaReader)($postId, $slotKey, true)
+                : get_post_meta($postId, $slotKey, true),
             'source' => 'wordpress_post_meta',
             'evidence_identity' => 'wordpress:post:' . $postId . ':' . $slotKey,
             'provenance' => 'runtime_verified',

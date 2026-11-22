@@ -237,7 +237,10 @@ final class Plugin
     {
         $summary = [];
         $version = $values['version'] ?? $values['schema_version'] ?? null;
-        if (is_string($version) && preg_match('/^[A-Za-z0-9._:-]{1,64}$/', $version) === 1) {
+        if (is_int($version) && $version > 0) {
+            $version = (string) $version;
+        }
+        if (is_string($version) && preg_match('/^[0-9][A-Za-z0-9._+-]{0,31}$/', $version) === 1) {
             $summary['version'] = $version;
         }
         $locale = $values['site_language'] ?? $values['locale'] ?? null;

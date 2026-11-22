@@ -40,11 +40,12 @@ final class AdminModule implements Module
         private EnvironmentCheck $environment,
         private OptionStore $options,
         $healthProvider = null,
-        ?\MySeoForAll\Core\HookDispatcher $dispatcher = null
+        ?\MySeoForAll\Core\HookDispatcher $dispatcher = null,
+        ?callable $capabilityChecker = null
     ) {
         $this->healthProvider = is_callable($healthProvider) ? $healthProvider : null;
         $this->dispatcher = $dispatcher;
-        $this->capabilityChecker = null;
+        $this->capabilityChecker = $capabilityChecker;
     }
 
     /**
@@ -147,15 +148,16 @@ final class AdminModule implements Module
      */
     public function renderPage(): void
     {
-        if (!function_exists('current_user_can') || !current_user_can('manage_options')) {
+        $allowed = is_callable($this->capabilityChecker)
+            ? (($this->capabilityChecker)('manage_options') === true)
+            : (function_exists('current_user_can') && current_user_can('manage_options'));
+        if (!$allowed) {
             return;
         }
 
-        $statuses = $this->environment->evaluate();
         $diagnostics = is_callable($this->healthProvider) ? ($this->healthProvider)() : [];
-        if (is_array($diagnostics['environment'] ?? null)) {
-            $statuses = $diagnostics['environment'];
-        }
+        $statuses = is_array($diagnostics['environment'] ?? null)
+            ? $diagnostics['environment'] : $this->environment->evaluate();
 
         echo '<div class="wrap"><h1>' . $this->escapeHtml('My SEO For All') . '</h1>';
         echo '<form method="post" action="options.php">';
@@ -166,8 +168,22 @@ final class AdminModule implements Module
             $label = $key;
             $compatible = in_array($status['compatible'] ?? null, [true, false, 'unknown'], true)
                 ? $status['compatible'] : 'unknown';
-            $message = $compatible === true ? $key . ' sẵn sàng.'
-                : ($compatible === false ? $key . ' chưa tương thích.' : $key . ' chưa đủ bằng chứng runtime.');
+            $installation = in_array($status['installation'] ?? null, ['installed', 'absent', 'unknown'], true)
+                ? $status['installation'] : 'unknown';
+            $activation = in_array($status['activation'] ?? null, ['active', 'inactive', 'unknown'], true)
+                ? $status['activation'] : 'unknown';
+            $fallback = ($status['fallback'] ?? false) === true;
+            if ($compatible === false) {
+                $message = $key . ' chưa tương thích.';
+            } elseif ($key === 'mbstring' && ($fallback || $installation === 'absent')) {
+                $message = 'mbstring thiếu; đang dùng fallback UTF-8 deterministic.';
+            } elseif ($installation === 'unknown' || $activation === 'unknown' || $compatible === 'unknown') {
+                $message = $key . ' chưa đủ bằng chứng runtime.';
+            } elseif ($activation === 'inactive') {
+                $message = $key . ' đã cài nhưng chưa kích hoạt.';
+            } else {
+                $message = $key . ' sẵn sàng.';
+            }
             echo '<li><strong>' . $this->escapeHtml($label) . '</strong>: '
                 . $this->escapeHtml($message) . '</li>';
         }
@@ -191,8 +207,10 @@ final class AdminModule implements Module
                 ? $diagnostics['coexistence']['outputs'][$output] : [];
             $risk = in_array($decision['duplicate_risk'] ?? null, ['none', 'possible', 'blocked'], true)
                 ? $decision['duplicate_risk'] : 'possible';
+            $owner = is_string($decision['owner'] ?? null) ? $decision['owner'] : 'unknown';
+            $state = is_string($decision['state'] ?? null) ? $decision['state'] : 'unknown';
             echo '<li><strong>' . $this->escapeHtml($output) . '</strong>: '
-                . $this->escapeHtml('duplicate_risk=' . $risk) . '</li>';
+                . $this->escapeHtml('owner=' . $owner . '; state=' . $state . '; duplicate_risk=' . $risk) . '</li>';
         }
         echo '</ul>';
         if (function_exists('settings_fields')) {

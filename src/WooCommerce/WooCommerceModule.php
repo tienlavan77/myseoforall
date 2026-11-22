@@ -25,10 +25,10 @@ final class WooCommerceModule implements Module
      * @param \MySeoForAll\Core\HookDispatcher|null $dispatcher
      * @return void
      */
-    public function __construct(?\MySeoForAll\Core\HookDispatcher $dispatcher = null)
+    public function __construct(?\MySeoForAll\Core\HookDispatcher $dispatcher = null, ?callable $availabilityProbe = null)
     {
         $this->dispatcher = $dispatcher;
-        $this->availabilityProbe = null;
+        $this->availabilityProbe = $availabilityProbe;
     }
 
     /**

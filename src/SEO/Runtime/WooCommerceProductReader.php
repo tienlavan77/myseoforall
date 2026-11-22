@@ -19,6 +19,8 @@ final class WooCommerceProductReader
     private $loader;
     private $parentLoader;
     private $currencyLoader;
+    private $seoOverrideResolver;
+    private array $seoProvenance = [];
     private LocalSeoAnalyzer $analyzer;
     private ProviderPayloadBuilder $builder;
 
@@ -33,13 +35,15 @@ final class WooCommerceProductReader
         ?LocalSeoAnalyzer $analyzer = null,
         ?ProviderPayloadBuilder $builder = null,
         $parentLoader = null,
-        $currencyLoader = null
+        $currencyLoader = null,
+        $seoOverrideResolver = null
     ) {
         $this->loader = $loader;
         $this->analyzer = $analyzer ?? new LocalSeoAnalyzer();
         $this->builder = $builder ?? new ProviderPayloadBuilder();
         $this->parentLoader = $parentLoader;
         $this->currencyLoader = $currencyLoader;
+        $this->seoOverrideResolver = $seoOverrideResolver;
     }
 
     /**
@@ -83,6 +87,8 @@ final class WooCommerceProductReader
             }
         }
 
+        $this->seoProvenance = [];
+        $source = $this->applySeoOverride($source, $productId);
         $contextSource = $this->contextSource($source, $type);
         $context = SeoContext::fromArray($contextSource, $type);
         $findings = $this->analyzer->analyze($context);
@@ -92,7 +98,7 @@ final class WooCommerceProductReader
 
         try {
             $payloadSource = $this->payloadSource($source, $type);
-            $payload = $this->builder->build($payloadSource, $type, ['product_name' => 'woocommerce']);
+            $payload = $this->builder->build($payloadSource, $type, array_merge(['product_name' => 'woocommerce'], $this->seoProvenance));
         } catch (\InvalidArgumentException $exception) {
             $payloadStatus = 'rejected';
             $payloadReason = $this->safeReason($exception);
@@ -217,6 +223,7 @@ final class WooCommerceProductReader
             'availability' => $this->availability($source),
             'offer' => $this->offer($source),
             'url' => $source['url'] ?? null,
+            'seo' => $this->seoFields($source['seo'] ?? null),
             'variation' => $type === 'variation' ? ($source['variation'] ?? null) : null,
         ];
 
@@ -242,6 +249,7 @@ final class WooCommerceProductReader
             'attributes' => $this->attributes($source['attributes'] ?? null),
             'offer' => $this->offer($source),
             'url' => $source['url'] ?? null,
+            'seo' => $this->seoFields($source['seo'] ?? null),
         ];
         if ($type === 'variation') {
             $payload['variation'] = $source['variation'] ?? [
@@ -386,6 +394,42 @@ final class WooCommerceProductReader
         return in_array($parentType, ['product', 'variable'], true)
             && (is_int($parentSourceId) || (is_string($parentSourceId) && ctype_digit($parentSourceId)))
             && (int) $parentSourceId === $parentId;
+    }
+
+    /** Apply only concrete, allowlisted Rank Math values returned by an injected resolver. */
+    private function applySeoOverride(array $source, int $productId): array
+    {
+        if (!is_callable($this->seoOverrideResolver)) {
+            return $source;
+        }
+        $resolved = ($this->seoOverrideResolver)($productId);
+        if (!is_array($resolved)) {
+            return $source;
+        }
+        foreach (['title', 'meta_description', 'canonical'] as $field) {
+            $record = $resolved[$field] ?? null;
+            if (is_array($record) && ($record['state'] ?? null) === 'value'
+                && isset($record['value']) && is_string($record['value']) && $record['value'] !== '') {
+                $source['seo'][$field] = $record['value'];
+                $this->seoProvenance['seo.' . $field] = 'rank_math';
+            }
+        }
+        return $this->dropNulls($source);
+    }
+
+    /** Filter nested SEO values to the three public fields accepted by the provider schema. */
+    private function seoFields($value): ?array
+    {
+        if (!is_array($value)) {
+            return null;
+        }
+        $result = [];
+        foreach (['title', 'meta_description', 'canonical'] as $field) {
+            if (isset($value[$field]) && is_string($value[$field]) && $value[$field] !== '') {
+                $result[$field] = $value[$field];
+            }
+        }
+        return $result === [] ? null : $result;
     }
 
     /**

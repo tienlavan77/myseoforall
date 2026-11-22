@@ -56,8 +56,39 @@ final class SeoModule implements Module
         $this->container->set(AiOutputValidator::class, new AiOutputValidator());
         $this->container->set(LocalSeoAnalyzer::class, $analyzer);
 
-        $contentReader = new WordPressContentReader(null, $analyzer, $builder);
-        $productReader = new WooCommerceProductReader(null, $analyzer, $builder);
+        // Rank Math is registered after SEO; resolve its services lazily at read time.
+        $seoOverrideResolver = function (int $objectId): array {
+            if (!$this->container->has(\MySeoForAll\Integrations\\RankMath\\RankMathReadAdapter::class)
+                || !$this->container->has(\MySeoForAll\Integrations\\RankMath\\RankMathDetector::class)
+                || !$this->container->has(\MySeoForAll\Integrations\\RankMath\\RankMathSourceObserver::class)) {
+                return [];
+            }
+            $adapter = $this->container->get(\MySeoForAll\Integrations\\RankMath\\RankMathReadAdapter::class);
+            $detector = $this->container->get(\MySeoForAll\Integrations\\RankMath\\RankMathDetector::class);
+            $baseObserver = $this->container->get(\MySeoForAll\Integrations\\RankMath\\RankMathSourceObserver::class);
+            $detected = $detector->detect();
+            $version = $detected['version']['value'] ?? null;
+            $version = is_string($version) && $version !== '' ? $version : null;
+            $observer = new class($baseObserver, $objectId) implements \MySeoForAll\Integrations\\RankMath\\RankMathSourceObserver {
+                private $observer;
+                private int $objectId;
+                /** Construct a scoped adapter that binds every mapped read to one positive post identity. */
+                public function __construct($observer, int $objectId)
+                {
+                    $this->observer = $observer;
+                    $this->objectId = $objectId;
+                }
+                /** Forward only allowlisted slots through the scoped source observer for this object. */
+                public function observe(string $sourceId, string $slotKey): array
+                {
+                    return $this->observer->observe('post:' . $this->objectId, $slotKey);
+                }
+            };
+            $snapshot = $adapter->readAll($observer, $version, ['title', 'meta_description', 'canonical']);
+            return is_array($snapshot['fields'] ?? null) ? $snapshot['fields'] : [];
+        };
+        $contentReader = new WordPressContentReader(null, $analyzer, $builder, null, $seoOverrideResolver);
+        $productReader = new WooCommerceProductReader(null, $analyzer, $builder, null, null, $seoOverrideResolver);
         $this->container->set(WordPressContentReader::class, $contentReader);
         $this->container->set(WooCommerceProductReader::class, $productReader);
         $this->container->set(ContentSeoInspector::class, new ContentSeoInspector($contentReader));
@@ -113,7 +144,9 @@ final class SeoModule implements Module
             return;
         }
         $postId = $post->ID;
-        if (!(is_int($postId) || (is_string($postId) && ctype_digit($postId))) || (int) $postId <= 0) {
+        if (!(is_int($postId) || (is_string($postId) && ctype_digit($postId)))
+            || (int) $postId <= 0
+            || (is_string($postId) && (string) (int) $postId !== $postId)) {
             return;
         }
         $postId = (int) $postId;

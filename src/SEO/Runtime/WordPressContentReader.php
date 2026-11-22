@@ -17,6 +17,9 @@ use MySeoForAll\SEO\Context\SeoContext;
 final class WordPressContentReader
 {
     private $loader;
+    private $permalinkLoader;
+    private $seoOverrideResolver;
+    private array $seoProvenance = [];
     private LocalSeoAnalyzer $analyzer;
     private ProviderPayloadBuilder $builder;
 
@@ -29,9 +32,13 @@ final class WordPressContentReader
     public function __construct(
         $loader = null,
         ?LocalSeoAnalyzer $analyzer = null,
-        ?ProviderPayloadBuilder $builder = null
+        ?ProviderPayloadBuilder $builder = null,
+        $permalinkLoader = null,
+        $seoOverrideResolver = null
     ) {
         $this->loader = $loader;
+        $this->permalinkLoader = $permalinkLoader;
+        $this->seoOverrideResolver = $seoOverrideResolver;
         $this->analyzer = $analyzer ?? new LocalSeoAnalyzer();
         $this->builder = $builder ?? new ProviderPayloadBuilder();
     }
@@ -66,6 +73,9 @@ final class WordPressContentReader
         }
 
         $resourceType = $postType === 'page' ? 'page' : 'article';
+        $source = $this->filterSource($source);
+        $this->seoProvenance = [];
+        $source = $this->applySeoOverride($source, $postId);
         $context = SeoContext::fromArray($source, $postType);
         $findings = $this->analyzer->analyze($context);
         $payload = null;
@@ -76,7 +86,7 @@ final class WordPressContentReader
             $payload = $this->builder->build(
                 $this->payloadSource($source),
                 $resourceType,
-                ['title' => 'wordpress', 'content' => 'wordpress']
+                array_merge(['title' => 'wordpress', 'content' => 'wordpress'], $this->seoProvenance)
             );
         } catch (\InvalidArgumentException $exception) {
             $payloadStatus = 'rejected';
@@ -116,32 +126,33 @@ final class WordPressContentReader
         if (is_array($raw)) {
             $source = $raw;
         } elseif (is_object($raw)) {
+            // Preserve the raw identity so readPost can reject dirty values before helpers run.
             $source = [
-                'id' => isset($raw->ID) ? (int) $raw->ID : null,
-                'post_type' => isset($raw->post_type) ? (string) $raw->post_type : '',
-                'title' => isset($raw->post_title) ? (string) $raw->post_title : '',
-                'content' => isset($raw->post_content) ? (string) $raw->post_content : '',
-                'excerpt' => isset($raw->post_excerpt) ? (string) $raw->post_excerpt : '',
+                'id' => $raw->ID ?? null,
+                'post_type' => isset($raw->post_type) && is_string($raw->post_type) ? $raw->post_type : '',
+                'title' => isset($raw->post_title) && is_string($raw->post_title) ? $raw->post_title : '',
+                'content' => isset($raw->post_content) && is_string($raw->post_content) ? $raw->post_content : '',
+                'excerpt' => isset($raw->post_excerpt) && is_string($raw->post_excerpt) ? $raw->post_excerpt : '',
             ];
-            // Slug is intentionally omitted because it is outside the provider payload schema.
+            if (isset($raw->post_name) && is_string($raw->post_name)) {
+                $source['slug'] = $raw->post_name;
+            }
         } else {
             return [];
         }
 
-        if (!isset($source['url']) && isset($source['id']) && function_exists('get_permalink')) {
-            $source['url'] = get_permalink((int) $source['id']);
+        if (!isset($source['url']) && isset($source['id']) && $this->isExactPositiveId($source['id'])) {
+            if (is_callable($this->permalinkLoader)) {
+                $source['url'] = ($this->permalinkLoader)((int) $source['id']);
+            } elseif (function_exists('get_permalink')) {
+                $source['url'] = get_permalink((int) $source['id']);
+            }
         }
-        if (!isset($source['title']) && isset($source['id']) && function_exists('get_the_title')) {
+        if (!isset($source['title']) && isset($source['id']) && function_exists('get_the_title') && $this->isExactPositiveId($source['id'])) {
             $source['title'] = get_the_title((int) $source['id']);
         }
 
-        foreach ($source as $key => $value) {
-            if ($value === null) {
-                unset($source[$key]);
-            }
-        }
-
-        return $source;
+        return $this->dropNulls($source);
     }
 
     /**
@@ -151,17 +162,68 @@ final class WordPressContentReader
      */
     private function payloadSource(array $source): array
     {
+        return $this->filterSource($source);
+    }
+
+    /** Keep only the closed content contract and recursively remove null values. */
+    private function filterSource(array $source): array
+    {
         $allowed = [
             'id', 'title', 'content', 'excerpt', 'meta_description', 'url', 'canonical',
-            'images', 'categories', 'tags', 'internal_links', 'seo', 'language', 'headings',
+            'images', 'categories', 'tags', 'internal_links', 'seo',
         ];
-        $payload = [];
+        $result = [];
         foreach ($allowed as $field) {
-            if (array_key_exists($field, $source)) {
-                $payload[$field] = $source[$field];
+            if (!array_key_exists($field, $source)) {
+                continue;
+            }
+            $value = $source[$field];
+            if ($field === 'seo' && is_array($value)) {
+                $nested = [];
+                foreach (['title', 'meta_description', 'canonical'] as $nestedField) {
+                    if (array_key_exists($nestedField, $value)) {
+                        $nested[$nestedField] = $value[$nestedField];
+                    }
+                }
+                $value = $nested;
+            }
+            $result[$field] = $value;
+        }
+        return $this->dropNulls($result);
+    }
+
+    /** Apply only concrete, allowlisted Rank Math values returned by an injected resolver. */
+    private function applySeoOverride(array $source, int $postId): array
+    {
+        if (!is_callable($this->seoOverrideResolver)) {
+            return $source;
+        }
+        $resolved = ($this->seoOverrideResolver)($postId);
+        if (!is_array($resolved)) {
+            return $source;
+        }
+        foreach (['title', 'meta_description', 'canonical'] as $field) {
+            $record = $resolved[$field] ?? null;
+            if (is_array($record) && ($record['state'] ?? null) === 'value'
+                && isset($record['value']) && is_string($record['value']) && $record['value'] !== '') {
+                $source['seo'][$field] = $record['value'];
+                $this->seoProvenance['seo.' . $field] = 'rank_math';
             }
         }
-        return $payload;
+        return $this->dropNulls($source);
+    }
+
+    /** Recursively remove null values from a closed projection without changing caller-owned input. */
+    private function dropNulls(array $source): array
+    {
+        foreach ($source as $key => $value) {
+            if ($value === null) {
+                unset($source[$key]);
+            } elseif (is_array($value)) {
+                $source[$key] = $this->dropNulls($value);
+            }
+        }
+        return $source;
     }
 
     /**

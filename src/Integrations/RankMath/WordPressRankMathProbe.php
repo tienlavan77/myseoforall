@@ -14,12 +14,15 @@ final class WordPressRankMathProbe implements RankMathEnvironmentProbe
 {
     private $optionReader;
     private $pluginsReader;
+    private $versionReader;
+    private bool $activePluginsInvalid = false;
 
     /** Configure read-only WordPress bridges for deterministic probing. */
-    public function __construct(?callable $optionReader = null, ?callable $pluginsReader = null)
+    public function __construct(?callable $optionReader = null, ?callable $pluginsReader = null, ?callable $versionReader = null)
     {
         $this->optionReader = $optionReader;
         $this->pluginsReader = $pluginsReader;
+        $this->versionReader = $versionReader;
     }
     /**
      * Observe whether Rank Math appears installed from active plugin or loaded metadata.
@@ -51,6 +54,14 @@ final class WordPressRankMathProbe implements RankMathEnvironmentProbe
     {
         $active = $this->activePlugins();
         if ($active === null) {
+            if ($this->activePluginsInvalid) {
+                return [
+                    'state' => 'unknown',
+                    'signal_source' => 'active_plugins',
+                    'evidence_state' => 'invalid',
+                    'evidence_identity' => 'wordpress:rank_math:active_plugins',
+                ];
+            }
             return $this->unknown('activation_unavailable', 'inactive');
         }
 
@@ -63,11 +74,17 @@ final class WordPressRankMathProbe implements RankMathEnvironmentProbe
      */
     public function observeVersion(): array
     {
-        if (defined('RANK_MATH_VERSION')) {
+        $version = null;
+        if (is_callable($this->versionReader)) {
+            $version = ($this->versionReader)();
+        } elseif (defined('RANK_MATH_VERSION')) {
+            $version = constant('RANK_MATH_VERSION');
+        }
+        if (is_string($version) && $version !== '') {
             return [
                 'state' => 'present',
-                'value' => (string) constant('RANK_MATH_VERSION'),
-                'signal_source' => 'RANK_MATH_VERSION',
+                'value' => $version,
+                'signal_source' => is_callable($this->versionReader) ? 'version_reader' : 'RANK_MATH_VERSION',
                 'evidence_state' => 'observed',
                 'evidence_identity' => 'wordpress:rank_math_version',
             ];
@@ -77,7 +94,7 @@ final class WordPressRankMathProbe implements RankMathEnvironmentProbe
             'state' => 'unavailable',
             'value' => null,
             'signal_source' => 'wordpress',
-            'evidence_state' => function_exists('get_option') ? 'missing' : 'unobserved',
+            'evidence_state' => (is_callable($this->versionReader) || function_exists('get_option') || function_exists('get_plugins')) ? 'missing' : 'unobserved',
             'evidence_identity' => 'wordpress:rank_math_version',
         ];
     }
@@ -107,6 +124,7 @@ final class WordPressRankMathProbe implements RankMathEnvironmentProbe
      */
     private function activePlugins(): ?array
     {
+        $this->activePluginsInvalid = false;
         if (!function_exists('get_option') && !is_callable($this->optionReader)) {
             return null;
         }
@@ -114,13 +132,16 @@ final class WordPressRankMathProbe implements RankMathEnvironmentProbe
             ? ($this->optionReader)('active_plugins', [])
             : get_option('active_plugins', []);
         if (!is_array($value)) {
+            $this->activePluginsInvalid = true;
             return null;
         }
-        $plugins = array_values(array_filter($value, 'is_string'));
-        if (count($plugins) !== count($value)) {
-            return null;
+        foreach ($value as $plugin) {
+            if (!is_string($plugin)) {
+                $this->activePluginsInvalid = true;
+                return null;
+            }
         }
-        return $plugins;
+        return array_values($value);
     }
 
     /**
