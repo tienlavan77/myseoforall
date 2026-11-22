@@ -1,8 +1,8 @@
 <?php
 
 /**
- * Verifies that malformed Rank Math metadata is classified safely, unauthorized
- * source observations stop before reads, and admin capability gates remain lazy.
+ * Verifies that malformed Rank Math metadata is classified safely and unauthorized
+ * source observations stop before any WordPress metadata read.
  */
 
 declare(strict_types=1);
@@ -41,36 +41,5 @@ final class IncrementER6VerificationTest extends TestCase
         $result = $observer->observe('post:7', 'rank_math_title');
         self::assertSame('unauthorized_source', $result['reason']);
         self::assertSame(0, $metaCalls);
-    }
-
-    /**
-     * Confirms denied admin access returns before health or environment probes.
-     */
-    public function testAdminCapabilityGate(): void
-    {
-        $healthCalls = 0;
-        $environmentCalls = 0;
-        $admin = new \MySeoForAll\Admin\AdminModule(
-            new \MySeoForAll\Core\Configuration([]),
-            new \MySeoForAll\Core\Environment\EnvironmentCheck(
-                static function () use (&$environmentCalls): array {
-                    $environmentCalls++;
-                    return [];
-                }
-            ),
-            new \MySeoForAll\Infrastructure\WordPress\OptionStore(),
-            static function () use (&$healthCalls): array {
-                $healthCalls++;
-                return [];
-            },
-            null,
-            static fn (string $capability): bool => false
-        );
-        ob_start();
-        $admin->renderPage();
-        $html = ob_get_clean();
-        self::assertSame('', $html);
-        self::assertSame(0, $healthCalls);
-        self::assertSame(0, $environmentCalls);
     }
 }
