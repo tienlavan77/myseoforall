@@ -57,7 +57,7 @@ final class IncrementER6VerificationTest extends TestCase
                 $environmentCalls++;
                 return [];
             }),
-            new \MySeoForAll\Core\OptionStore(),
+            new \MySeoForAll\Infrastructure\WordPress\OptionStore(),
             static function () use (&$healthCalls): array {
                 $healthCalls++;
                 return [];

@@ -58,18 +58,18 @@ final class SeoModule implements Module
 
         // Rank Math is registered after SEO; resolve its services lazily at read time.
         $seoOverrideResolver = function (int $objectId): array {
-            if (!$this->container->has(\MySeoForAll\Integrations\\RankMath\\RankMathReadAdapter::class)
-                || !$this->container->has(\MySeoForAll\Integrations\\RankMath\\RankMathDetector::class)
-                || !$this->container->has(\MySeoForAll\Integrations\\RankMath\\RankMathSourceObserver::class)) {
+            if (!$this->container->has(\MySeoForAll\Integrations\RankMath\RankMathReadAdapter::class)
+                || !$this->container->has(\MySeoForAll\Integrations\RankMath\RankMathDetector::class)
+                || !$this->container->has(\MySeoForAll\Integrations\RankMath\RankMathSourceObserver::class)) {
                 return [];
             }
-            $adapter = $this->container->get(\MySeoForAll\Integrations\\RankMath\\RankMathReadAdapter::class);
-            $detector = $this->container->get(\MySeoForAll\Integrations\\RankMath\\RankMathDetector::class);
-            $baseObserver = $this->container->get(\MySeoForAll\Integrations\\RankMath\\RankMathSourceObserver::class);
+            $adapter = $this->container->get(\MySeoForAll\Integrations\RankMath\RankMathReadAdapter::class);
+            $detector = $this->container->get(\MySeoForAll\Integrations\RankMath\RankMathDetector::class);
+            $baseObserver = $this->container->get(\MySeoForAll\Integrations\RankMath\RankMathSourceObserver::class);
             $detected = $detector->detect();
             $version = $detected['version']['value'] ?? null;
             $version = is_string($version) && $version !== '' ? $version : null;
-            $observer = new class($baseObserver, $objectId) implements \MySeoForAll\Integrations\\RankMath\\RankMathSourceObserver {
+            $observer = new class($baseObserver, $objectId) implements \MySeoForAll\Integrations\RankMath\RankMathSourceObserver {
                 private $observer;
                 private int $objectId;
                 /** Construct a scoped adapter that binds every mapped read to one positive post identity. */
