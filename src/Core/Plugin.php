@@ -10,6 +10,9 @@ declare(strict_types=1);
 
 namespace MySeoForAll\Core;
 
+// Keep plugin bootstrap resilient when a deployed Composer class map predates HookDispatcher.
+require_once __DIR__ . '/HookDispatcher.php';
+
 use MySeoForAll\Admin\AdminModule;
 use MySeoForAll\Core\Configuration\Configuration;
 use MySeoForAll\Core\Environment\EnvironmentCheck;
