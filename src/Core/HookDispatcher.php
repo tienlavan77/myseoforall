@@ -8,6 +8,9 @@ declare(strict_types=1);
 
 namespace MySeoForAll\Core;
 
+/**
+ * Runtime hook registrar used by the plugin composition root.
+ */
 final class HookDispatcher
 {
     /** @var array<string, array{hook:string, listener_key:string, priority:int, accepted_args:int}> */

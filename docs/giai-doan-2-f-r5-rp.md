@@ -41,3 +41,11 @@ Snapshot source/test được commit tại:
 ## Giới hạn
 
 Các kiểm thử là offline và dùng seams/test doubles; chúng không chứng minh migration hoặc runtime WordPress production. Không có network call, secret plaintext hay Apply operation trong phạm vi này.
+
+## Bổ sung: lỗi nạp HookDispatcher
+
+- `src/Core/Plugin.php` đã được bảo vệ bằng `class_exists(HookDispatcher::class)` trước khi mở trực tiếp `src/Core/HookDispatcher.php`. Khi Composer đã nạp lớp, bootstrap không còn mở lại file và tránh cảnh báo `Permission denied` do quyền đọc của tiến trình web.
+- Forge verification `VERIFY-RUN-f154eb33-144c-4a5f-a2dc-9c590a6b1bc8` báo `commit_sha: ce5b4d5edceaedd4e10945bdf9011b36335ef6cf`, `tests/Unit/RuntimeCompositionSmokeTest.php` passed, exit code `0`; bản kiểm tra được thực hiện khi working tree chứa thay đổi này, nhưng chưa có commit mới.
+- Nếu deployment vẫn báo `Permission denied` khi Composer chưa nạp lớp, cần sửa quyền đọc/execute của tiến trình web trên `src/Core/HookDispatcher.php` và các thư mục cha, hoặc regenerate `vendor/autoload.php`; đây là điều kiện vận hành ngoài mã nguồn và không được chứng minh bởi test CLI.
+- Sau thay đổi, checksum hiện tại của `src/Core/Plugin.php` là `sha256:12cdaddbeaf3a635d2926a9c06e2622af2b7aadc100ed078f7a11c927f84688c`.
+- `src/Core/HookDispatcher.php` đã được ghi lại sạch với checksum `sha256:60a433f81da4e4f2303fd14e2c7f2a1f85ab5a09fb7b32b97752b2ecac639858`; Forge test `VERIFY-RUN-a1d52320-a21b-4fb6-848b-715920fcf4e7` passed. Nếu production vẫn lỗi, artifact/deployment đang không dùng file này hoặc user PHP không có quyền traverse/read thư mục.

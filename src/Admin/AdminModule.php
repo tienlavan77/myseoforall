@@ -167,7 +167,25 @@ final class AdminModule implements Module
             ? $diagnostics['environment'] : $this->environment->evaluate();
         $aiState = $this->aiController !== null ? $this->aiController->viewState() : [];
 
-        echo '<div class="wrap"><h1>' . $this->escapeHtml('My SEO For All') . '</h1>';
+        echo '<style id="myseo-for-all-admin-styles">'
+            . '.myseo-admin{max-width:1100px}.myseo-admin__intro{color:#50575e;font-size:14px;margin:8px 0 20px}'
+            . '.myseo-card{background:#fff;border:1px solid #dcdcde;border-radius:4px;box-shadow:0 1px 2px rgba(0,0,0,.04);margin:0 0 20px;padding:20px 24px}'
+            . '.myseo-card h2{font-size:18px;margin:0 0 16px;padding:0}.myseo-card__hint{color:#646970;margin:0 0 18px}'
+            . '.myseo-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 24px}'
+            . '.myseo-field{display:flex;flex-direction:column;gap:6px;font-weight:600;color:#1d2327}'
+            . '.myseo-field input[type=text],.myseo-field input[type=url],.myseo-field input[type=password],.myseo-field input[type=number]{max-width:none;width:100%}'
+            . '.myseo-field--check{display:flex;flex-direction:row;align-items:center;gap:8px;grid-column:1/-1}'
+            . '.myseo-field--check input{margin:0}.myseo-status{background:#f6f7f7;border-left:4px solid #72aee6;margin:18px 0 0;padding:10px 12px}'
+            . '.myseo-health-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 16px;list-style:none;margin:0;padding:0}'
+            . '.myseo-health-grid li{background:#f6f7f7;border:1px solid #dcdcde;border-radius:3px;margin:0;padding:10px 12px}'
+            . '.myseo-health-grid strong{display:block;color:#1d2327;margin-bottom:3px;text-transform:capitalize}'
+            . '.myseo-admin .submit{margin:18px 0 0;padding:0}.myseo-admin .submit input{margin:0}'
+            . '@media (max-width:782px){.myseo-fields,.myseo-health-grid{grid-template-columns:1fr}.myseo-card{padding:16px}}'
+            . '</style>';
+        echo '<div class="wrap myseo-admin"><h1>' . $this->escapeHtml('My SEO For All') . '</h1>';
+        echo '<p class="myseo-admin__intro">' . $this->escapeHtml('Cấu hình AI và theo dõi khả năng tương thích ngay trong khu vực quản trị WordPress.') . '</p>';
+        echo '<section class="myseo-card"><h2>' . $this->escapeHtml('AI settings') . '</h2>';
+        echo '<p class="myseo-card__hint">' . $this->escapeHtml('Các khóa bí mật không được hiển thị lại sau khi lưu.') . '</p>';
         echo '<form method="post" action="' . $this->escapeHtml(function_exists('admin_url') ? (string) admin_url('admin-post.php') : 'admin-post.php') . '">';
         echo '<input type="hidden" name="action" value="myseo_save_ai_settings">';
         echo '<input type="hidden" name="ai_enabled_present" value="1">';
@@ -175,22 +193,25 @@ final class AdminModule implements Module
         if (function_exists('wp_nonce_field')) {
             wp_nonce_field('myseo_save_ai_settings');
         }
-        echo '<label><input type="checkbox" name="ai_enabled" value="1" ' . (($aiState['ai_enabled'] ?? false) === true ? 'checked' : '') . '> AI enabled</label>';
-        echo '<label>Base URL <input type="url" name="base_url" value="' . $this->escapeHtml((string) ($aiState['base_url'] ?? '')) . '"></label>';
-        echo '<label>Auth scheme <input type="text" name="auth_scheme" value="' . $this->escapeHtml((string) ($aiState['auth_scheme'] ?? 'x_api_key')) . '"></label>';
-        echo '<label>Default model <input type="text" name="default_model" value="' . $this->escapeHtml((string) ($aiState['default_model'] ?? '')) . '"></label>';
-        echo '<label>Allowed models <input type="text" name="allowed_models" value="' . $this->escapeHtml(implode(',', is_array($aiState['allowed_models'] ?? null) ? $aiState['allowed_models'] : [])) . '"></label>';
-        echo '<label>Timeout <input type="number" name="timeout_seconds" value="' . $this->escapeHtml((string) ($aiState['timeout_seconds'] ?? 20)) . '"></label>';
-        echo '<label>Retries <input type="number" name="max_retries" value="' . $this->escapeHtml((string) ($aiState['max_retries'] ?? 1)) . '"></label>';
-        echo '<label>API key <input type="password" name="api_key" value="" autocomplete="new-password"></label>';
-        echo '<label><input type="checkbox" name="clear_api_key" value="1"> Xóa API key đã lưu</label>';
-        echo '<p>' . $this->escapeHtml('Credential status: ' . (string) ($aiState['credential_status'] ?? 'unknown')) . '</p>';
+        echo '<div class="myseo-fields">';
+        echo '<label class="myseo-field myseo-field--check"><input type="checkbox" name="ai_enabled" value="1" ' . (($aiState['ai_enabled'] ?? false) === true ? 'checked' : '') . '> <span>AI enabled</span></label>';
+        echo '<label class="myseo-field"><span>Base URL</span><input type="url" name="base_url" value="' . $this->escapeHtml((string) ($aiState['base_url'] ?? '')) . '"></label>';
+        echo '<label class="myseo-field"><span>Auth scheme</span><input type="text" name="auth_scheme" value="' . $this->escapeHtml((string) ($aiState['auth_scheme'] ?? 'x_api_key')) . '"></label>';
+        echo '<label class="myseo-field"><span>Default model</span><input type="text" name="default_model" value="' . $this->escapeHtml((string) ($aiState['default_model'] ?? '')) . '"></label>';
+        echo '<label class="myseo-field"><span>Allowed models</span><input type="text" name="allowed_models" value="' . $this->escapeHtml(implode(',', is_array($aiState['allowed_models'] ?? null) ? $aiState['allowed_models'] : [])) . '"><small class="description">Phân tách nhiều model bằng dấu phẩy.</small></label>';
+        echo '<label class="myseo-field"><span>Timeout (seconds)</span><input type="number" name="timeout_seconds" value="' . $this->escapeHtml((string) ($aiState['timeout_seconds'] ?? 20)) . '" min="1"></label>';
+        echo '<label class="myseo-field"><span>Retries</span><input type="number" name="max_retries" value="' . $this->escapeHtml((string) ($aiState['max_retries'] ?? 1)) . '" min="0"></label>';
+        echo '<label class="myseo-field"><span>API key</span><input type="password" name="api_key" value="" autocomplete="new-password"><small class="description">Để trống nếu muốn giữ khóa hiện tại.</small></label>';
+        echo '<label class="myseo-field myseo-field--check"><input type="checkbox" name="clear_api_key" value="1"> <span>Xóa API key đã lưu</span></label>';
+        echo '</div>';
+        echo '<p class="myseo-status">' . $this->escapeHtml('Credential status: ' . (string) ($aiState['credential_status'] ?? 'unknown')) . '</p>';
         if (function_exists('submit_button')) {
             submit_button('Lưu AI settings');
         }
-        echo '</form>';
-        echo '<p>' . $this->escapeHtml('Cấu hình nền tảng theo phạm vi site.') . '</p>';
-        echo '<h2>' . $this->escapeHtml('Health Check') . '</h2><ul>';
+        echo '</form></section>';
+        echo '<section class="myseo-card"><h2>' . $this->escapeHtml('Health Check') . '</h2>';
+        echo '<p class="myseo-card__hint">' . $this->escapeHtml('Trạng thái môi trường và các module được đọc từ runtime hiện tại.') . '</p>';
+        echo '<ul class="myseo-health-grid">';
         foreach (['php', 'wordpress', 'woocommerce', 'mbstring'] as $key) {
             $status = is_array($statuses[$key] ?? null) ? $statuses[$key] : [];
             $label = $key;
@@ -243,7 +264,9 @@ final class AdminModule implements Module
             echo '<li><strong>' . $this->escapeHtml($output) . '</strong>: '
                 . $this->escapeHtml('owner=' . $owner . '; state=' . $state . '; duplicate_risk=' . $risk) . '</li>';
         }
-        echo '</ul>';
+        echo '</ul></section>';
+        echo '<section class="myseo-card myseo-card--secondary"><h2>' . $this->escapeHtml('Cấu hình plugin') . '</h2>';
+        echo '<p class="myseo-card__hint">' . $this->escapeHtml('Lưu các tùy chọn nền tảng của plugin theo phạm vi site.') . '</p>';
         echo '<form method="post" action="' . $this->escapeHtml(function_exists('admin_url') ? (string) admin_url('options.php') : 'options.php') . '">';
         if (function_exists('settings_fields')) {
             settings_fields('myseo_for_all');
@@ -251,7 +274,7 @@ final class AdminModule implements Module
         if (function_exists('submit_button')) {
             submit_button('Lưu cấu hình');
         }
-        echo '</form></div>';
+        echo '</form></section></div>';
     }
 
     /**
