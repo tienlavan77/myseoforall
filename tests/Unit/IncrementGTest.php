@@ -243,7 +243,7 @@ final class IncrementGTest extends TestCase
         return [
             'schema_version' => 'myseo.ai.request.v2',
             'task' => 'seo_analysis',
-            'context' => ['schema_version' => 'provider-payload-2', 'type' => 'article', 'provenance' => []],
+            'context' => (new \MySeoForAll\SEO\Context\ProviderPayloadBuilder())->build(['title' => 'Article', 'content' => 'Body'], 'article'),
         ];
     }
 }
