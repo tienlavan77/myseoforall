@@ -119,11 +119,13 @@ final class AiSettingsRepository
         $credential = $this->environmentCredential();
         if ($credential === null) {
             $env = function_exists('getenv') ? getenv('MYSEO_AI_GATEWAY_API_KEY') : false;
-            if (defined('MYSEO_AI_GATEWAY_API_KEY') || ($env !== false && $env !== '')) throw new RuntimeException('authentication_failed');
-            try { $credential = $this->decryptCredential($settings['credential_envelope'] ?? []); } catch (RuntimeException) { throw new RuntimeException('authentication_failed'); }
+            if (defined('MYSEO_AI_GATEWAY_API_KEY') || $env !== false) throw new RuntimeException('authentication_failed');
+            if (($settings['credential_envelope'] ?? null) === null) throw new RuntimeException('provider_disabled');
+            try { $credential = $this->decryptCredential($settings['credential_envelope']); } catch (RuntimeException) { throw new RuntimeException('authentication_failed'); }
         }
         if ($this->transport === null || $this->resolver === null) throw new RuntimeException('transport_unavailable');
-        $url = rtrim((string) $settings['base_url'], '/') . (str_ends_with((string) $settings['base_url'], '/messages') ? '' : (str_ends_with((string) $settings['base_url'], '/v1') ? '/messages' : '/v1/messages'));
+        $base = rtrim((string) $settings['base_url'], '/');
+        $url = $base . (str_ends_with($base, '/messages') ? '' : (str_ends_with($base, '/v1') ? '/messages' : '/v1/messages'));
         $static = $this->gateway->validateStaticUrl($url);
         if (($static['status'] ?? 'invalid') !== 'ok') throw new RuntimeException('gateway_policy_rejected');
         $url = (string) ($static['url'] ?? $url);
@@ -133,17 +135,19 @@ final class AiSettingsRepository
         $headers = ['Content-Type' => 'application/json; charset=utf-8', 'Accept' => 'application/json', 'anthropic-version' => '2023-06-01'];
         if ($this->replaySafePost) $headers['Idempotency-Key'] = bin2hex(random_bytes(16));
         $headers[$settings['auth_scheme'] === 'bearer' ? 'Authorization' : 'x-api-key'] = $settings['auth_scheme'] === 'bearer' ? 'Bearer ' . $credential : $credential;
-        $clock = $this->clock ?? static fn (): float => microtime(true); $sleeper = $this->sleeper ?? static function (int $ms): void { usleep($ms * 1000); }; $deadline = $clock() + (float) $settings['timeout_seconds'];
+        $clock = $this->clock ?? static fn (): float => hrtime(true) / 1_000_000_000; $sleeper = $this->sleeper ?? static function (int $ms): void { usleep($ms * 1000); }; $deadline = $clock() + (float) $settings['timeout_seconds'];
         try {
             for ($attempt = 0; $attempt <= (int) $settings['max_retries']; $attempt++) {
                 if ($clock() >= $deadline) throw new RuntimeException('deadline_exceeded');
                 $resolved = $this->gateway->validateResolvedIps($url, fn (string $host): array => $this->resolver->resolve($host));
-                if (($resolved['status'] ?? 'invalid') !== 'ok' || ($remaining = $deadline - $clock()) <= 0) throw new RuntimeException('deadline_exceeded');
+                if (($resolved['status'] ?? 'invalid') !== 'ok') throw new RuntimeException('gateway_policy_rejected');
+                $remaining = $deadline - $clock();
+                if ($remaining <= 0) throw new RuntimeException('deadline_exceeded');
                 try { $result = $this->transport->send($url, $headers, $body, max(1, (int) floor($remaining)), $resolved['ips'] ?? []); }
                 catch (RuntimeException $error) { $connect = in_array($error->getMessage(), ['connect_failed', 'connect_timeout_unsent'], true); if (!$connect || $attempt >= (int) $settings['max_retries']) throw $error; $backoff = 100 * (2 ** $attempt); if ($clock() + $backoff / 1000 >= $deadline) throw new RuntimeException('deadline_exceeded'); $sleeper($backoff); continue; }
                 $status = (int) ($result['status'] ?? 0); $retryable = in_array($status, [429, 502, 503, 504], true);
                 if (!$retryable || !$this->replaySafePost || !($result['sent'] ?? true) || $attempt >= (int) $settings['max_retries']) return $result;
-                $backoff = 100 * (2 ** $attempt); if ($clock() + $backoff / 1000 >= $deadline) throw new RuntimeException('deadline_exceeded'); $sleeper($backoff);
+                $backoff = 100 * (2 ** $attempt); if ($clock() + $backoff / 1000 >= $deadline) return $result; $sleeper($backoff);
             }
         } finally { unset($credential, $headers, $body); }
         throw new RuntimeException('transport_failed');
