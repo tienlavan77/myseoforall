@@ -124,6 +124,14 @@ final class AiSettingsRepository
             try { $credential = $this->decryptCredential($settings['credential_envelope']); } catch (RuntimeException) { throw new RuntimeException('authentication_failed'); }
         }
         if ($this->transport === null || $this->resolver === null) throw new RuntimeException('transport_unavailable');
+        $traceArgs = (string) ini_get('zend.exception_ignore_args');
+        if (!in_array(strtolower($traceArgs), ['1', 'on', 'true'], true)) {
+            @ini_set('zend.exception_ignore_args', '1');
+            $traceArgs = (string) ini_get('zend.exception_ignore_args');
+        }
+        if (!in_array(strtolower($traceArgs), ['1', 'on', 'true'], true)) {
+            throw new RuntimeException('transport_unavailable');
+        }
         $base = rtrim((string) $settings['base_url'], '/');
         $url = $base . (str_ends_with($base, '/messages') ? '' : (str_ends_with($base, '/v1') ? '/messages' : '/v1/messages'));
         $static = $this->gateway->validateStaticUrl($url);
