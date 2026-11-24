@@ -46,6 +46,10 @@ Sau mỗi lần chạy, PHPUnit cache được khôi phục về baseline. Forge
 - `tests/Unit/IncrementGTest.php`: `57ac75be9187ad891fb0d56e3a920c7a28eb153345f8897f4d40928a62f26ead`
 - `docs/giai-doan-2-g-r9-rp.md`: ghi nhận sau khi tạo file.
 
+## Phát hành
+
+Bản nghiệm thu được mở trên nhánh `giai-doan-2`; commit phát hành tiếp nối sẽ giữ nguyên snapshot implementation và các kiểm chứng r9.
+
 ## Kết luận
 
 R9 đã tạo clean implementation snapshot và chứng minh focused/full Unit pass trên cùng commit. Increment G đủ điều kiện chuyển Reviewer độc lập kiểm tra snapshot; kết quả offline không chứng minh gateway production, TLS peer hoặc chính sách retention upstream.
