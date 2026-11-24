@@ -16,6 +16,11 @@ final class AiProviderException extends \InvalidArgumentException
     public const MALFORMED_REQUEST = 'malformed_request';
     public const UNSUPPORTED_TASK = 'unsupported_task';
     public const INVALID_RESPONSE = 'invalid_response';
+    public const PROVIDER_DISABLED = 'provider_disabled';
+    public const AUTHENTICATION_FAILED = 'authentication_failed';
+    public const GATEWAY_POLICY_REJECTED = 'gateway_policy_rejected';
+    public const RATE_LIMITED = 'rate_limited';
+    public const TRANSPORT_FAILED = 'transport_failed';
 
     private string $category;
 
@@ -28,6 +33,11 @@ final class AiProviderException extends \InvalidArgumentException
             self::MALFORMED_REQUEST,
             self::UNSUPPORTED_TASK,
             self::INVALID_RESPONSE,
+            self::PROVIDER_DISABLED,
+            self::AUTHENTICATION_FAILED,
+            self::GATEWAY_POLICY_REJECTED,
+            self::RATE_LIMITED,
+            self::TRANSPORT_FAILED,
         ], true)) {
             $category = self::MALFORMED_REQUEST;
         }

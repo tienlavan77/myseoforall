@@ -16,6 +16,12 @@ if (!class_exists(HookDispatcher::class)) {
 }
 
 use MySeoForAll\Admin\AdminModule;
+use MySeoForAll\AI\Contracts\AiProvider;
+use MySeoForAll\AI\Contracts\GatewayResolver;
+use MySeoForAll\AI\Contracts\GatewayTransport;
+use MySeoForAll\AI\GatewayAiProvider;
+use MySeoForAll\AI\NativeGatewayResolver;
+use MySeoForAll\AI\CurlGatewayTransport;
 use MySeoForAll\Core\Configuration\Configuration;
 use MySeoForAll\Core\Environment\EnvironmentCheck;
 use MySeoForAll\Core\Contracts\Module;
@@ -59,8 +65,23 @@ final class Plugin
         $this->container->set(Configuration::class, $configuration);
         $this->container->set(EnvironmentCheck::class, $environment);
         $this->container->set(OptionStore::class, $options);
-        $aiSettings = new \MySeoForAll\AI\AiSettingsRepository($options);
+        $transport = $this->container->has(GatewayTransport::class)
+            ? $this->container->get(GatewayTransport::class)
+            : new CurlGatewayTransport();
+        $resolver = $this->container->has(GatewayResolver::class)
+            ? $this->container->get(GatewayResolver::class)
+            : new NativeGatewayResolver();
+        $aiSettings = $this->container->has(\MySeoForAll\AI\AiSettingsRepository::class)
+            ? $this->container->get(\MySeoForAll\AI\AiSettingsRepository::class)
+            : new \MySeoForAll\AI\AiSettingsRepository($options, null, null, false, $transport, $resolver);
+        $gatewayProvider = $this->container->has(GatewayAiProvider::class)
+            ? $this->container->get(GatewayAiProvider::class)
+            : new GatewayAiProvider($aiSettings);
+        $this->container->set(GatewayTransport::class, $transport);
+        $this->container->set(GatewayResolver::class, $resolver);
         $this->container->set(\MySeoForAll\AI\AiSettingsRepository::class, $aiSettings);
+        $this->container->set(GatewayAiProvider::class, $gatewayProvider);
+        $this->container->set(AiProvider::class, $gatewayProvider);
         $this->container->set(
             \MySeoForAll\AI\AiSettingsController::class,
             new \MySeoForAll\AI\AiSettingsController($aiSettings)

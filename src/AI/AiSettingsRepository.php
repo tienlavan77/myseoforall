@@ -6,6 +6,9 @@ namespace MySeoForAll\AI;
 
 use MySeoForAll\Core\Configuration\Configuration;
 use MySeoForAll\Infrastructure\WordPress\OptionStore;
+use MySeoForAll\AI\Contracts\GatewayResolver;
+use MySeoForAll\AI\Contracts\GatewayTransport;
+use Closure;
 use RuntimeException;
 
 /**
@@ -18,11 +21,17 @@ final class AiSettingsRepository
     private const ALLOWED_KEYS = ['schema_version', 'revision', 'ai_enabled', 'gateway_mode', 'base_url', 'auth_scheme', 'allowed_models', 'default_model', 'timeout_seconds', 'max_retries', 'credential_envelope'];
     private GatewayEndpointValidator $gateway;
 
+    /** Compose settings storage with optional gateway execution seams and deterministic timing hooks. */
     public function __construct(
         private readonly OptionStore $options,
         private readonly ?string $encryptionKey = null,
         ?GatewayEndpointValidator $gateway = null,
         private readonly bool $preferOpenSsl = false,
+        private readonly ?GatewayTransport $transport = null,
+        private readonly ?GatewayResolver $resolver = null,
+        private readonly ?Closure $clock = null,
+        private readonly ?Closure $sleeper = null,
+        private readonly bool $replaySafePost = false,
     ) {
         $this->gateway = $gateway ?? new GatewayEndpointValidator();
     }
@@ -92,6 +101,52 @@ final class AiSettingsRepository
         }
         $purge = $this->purgeLegacyCoreKeys();
         return ['status' => 'saved', 'settings' => $candidate, 'purge_status' => $purge['status']];
+    }
+
+    /**
+     * Execute one closed gateway request after readiness and credential checks.
+     *
+     * @param array<string,mixed> $context
+     * @return array{status:int,body:string,sent:bool}
+     */
+    public function executeGatewayRequest(string $task, array $context): array
+    {
+        $loaded = $this->load(); $settings = $loaded['settings'];
+        $ready = $loaded['status'] === 'ok' && ($settings['ai_enabled'] ?? false) === true
+            && ($settings['base_url'] ?? '') !== '' && ($settings['default_model'] ?? '') !== ''
+            && (($settings['allowed_models'] ?? []) === [] || in_array($settings['default_model'], $settings['allowed_models'], true));
+        if (!$ready) throw new RuntimeException('provider_disabled');
+        $credential = $this->environmentCredential();
+        if ($credential === null) {
+            $env = function_exists('getenv') ? getenv('MYSEO_AI_GATEWAY_API_KEY') : false;
+            if (defined('MYSEO_AI_GATEWAY_API_KEY') || ($env !== false && $env !== '')) throw new RuntimeException('authentication_failed');
+            try { $credential = $this->decryptCredential($settings['credential_envelope'] ?? []); } catch (RuntimeException) { throw new RuntimeException('authentication_failed'); }
+        }
+        if ($this->transport === null || $this->resolver === null) throw new RuntimeException('transport_unavailable');
+        $url = rtrim((string) $settings['base_url'], '/') . (str_ends_with((string) $settings['base_url'], '/messages') ? '' : (str_ends_with((string) $settings['base_url'], '/v1') ? '/messages' : '/v1/messages'));
+        $static = $this->gateway->validateStaticUrl($url);
+        if (($static['status'] ?? 'invalid') !== 'ok') throw new RuntimeException('gateway_policy_rejected');
+        $url = (string) ($static['url'] ?? $url);
+        $prompts = ['seo_analysis' => 'Return JSON with exactly {"findings":[{"code":"","severity":"info|warning|error","message":"","field":"","evidence":"","suggested_fix":""}]}', 'title_meta_suggestion' => 'Return JSON with exactly {"target_field":"title|meta_description","value":"","language":"vi|en","provenance":"wordpress|woocommerce|rank_math|editor"}', 'product_description_draft' => 'Return JSON with exactly {"target":"product","content":"","language":"vi|en","provenance":"wordpress|woocommerce|rank_math|editor","uses_commercial_facts":false}'];
+        if (!isset($prompts[$task])) throw new RuntimeException('provider_disabled');
+        $body = ['model' => $settings['default_model'], 'max_tokens' => 2048, 'system' => $prompts[$task], 'messages' => [['role' => 'user', 'content' => json_encode(['task' => $task, 'context' => $context], JSON_THROW_ON_ERROR)]]];
+        $headers = ['Content-Type' => 'application/json; charset=utf-8', 'Accept' => 'application/json', 'anthropic-version' => '2023-06-01'];
+        if ($this->replaySafePost) $headers['Idempotency-Key'] = bin2hex(random_bytes(16));
+        $headers[$settings['auth_scheme'] === 'bearer' ? 'Authorization' : 'x-api-key'] = $settings['auth_scheme'] === 'bearer' ? 'Bearer ' . $credential : $credential;
+        $clock = $this->clock ?? static fn (): float => microtime(true); $sleeper = $this->sleeper ?? static function (int $ms): void { usleep($ms * 1000); }; $deadline = $clock() + (float) $settings['timeout_seconds'];
+        try {
+            for ($attempt = 0; $attempt <= (int) $settings['max_retries']; $attempt++) {
+                if ($clock() >= $deadline) throw new RuntimeException('deadline_exceeded');
+                $resolved = $this->gateway->validateResolvedIps($url, fn (string $host): array => $this->resolver->resolve($host));
+                if (($resolved['status'] ?? 'invalid') !== 'ok' || ($remaining = $deadline - $clock()) <= 0) throw new RuntimeException('deadline_exceeded');
+                try { $result = $this->transport->send($url, $headers, $body, max(1, (int) floor($remaining)), $resolved['ips'] ?? []); }
+                catch (RuntimeException $error) { $connect = in_array($error->getMessage(), ['connect_failed', 'connect_timeout_unsent'], true); if (!$connect || $attempt >= (int) $settings['max_retries']) throw $error; $backoff = 100 * (2 ** $attempt); if ($clock() + $backoff / 1000 >= $deadline) throw new RuntimeException('deadline_exceeded'); $sleeper($backoff); continue; }
+                $status = (int) ($result['status'] ?? 0); $retryable = in_array($status, [429, 502, 503, 504], true);
+                if (!$retryable || !$this->replaySafePost || !($result['sent'] ?? true) || $attempt >= (int) $settings['max_retries']) return $result;
+                $backoff = 100 * (2 ** $attempt); if ($clock() + $backoff / 1000 >= $deadline) throw new RuntimeException('deadline_exceeded'); $sleeper($backoff);
+            }
+        } finally { unset($credential, $headers, $body); }
+        throw new RuntimeException('transport_failed');
     }
 
     /** @return array{status:string} */
