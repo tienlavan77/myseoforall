@@ -59,7 +59,7 @@ final class AiSettingsRepository
      * @param array<string,mixed> $input
      * @return array{status:string,settings?:array<string,mixed>,reason?:string}
      */
-    public function save(array $input, ?int $expectedRevision = null, ?string $apiKey = null): array
+    public function save(array $input, ?int $expectedRevision = null, #[\SensitiveParameter] ?string $apiKey = null): array
     {
         $current = $this->load();
         if ($current['status'] === 'corrupted') {
@@ -109,7 +109,7 @@ final class AiSettingsRepository
      * @param array<string,mixed> $context
      * @return array{status:int,body:string,sent:bool}
      */
-    public function executeGatewayRequest(string $task, array $context): array
+    public function executeGatewayRequest(string $task, #[\SensitiveParameter] array $context): array
     {
         $loaded = $this->load(); $settings = $loaded['settings'];
         $ready = $loaded['status'] === 'ok' && ($settings['ai_enabled'] ?? false) === true
@@ -131,7 +131,7 @@ final class AiSettingsRepository
         $url = (string) ($static['url'] ?? $url);
         $prompts = ['seo_analysis' => 'Return JSON with exactly {"findings":[{"code":"","severity":"info|warning|error","message":"","field":"","evidence":"","suggested_fix":""}]}', 'title_meta_suggestion' => 'Return JSON with exactly {"target_field":"title|meta_description","value":"","language":"vi|en","provenance":"wordpress|woocommerce|rank_math|editor"}', 'product_description_draft' => 'Return JSON with exactly {"target":"product","content":"","language":"vi|en","provenance":"wordpress|woocommerce|rank_math|editor","uses_commercial_facts":false}'];
         if (!isset($prompts[$task])) throw new RuntimeException('provider_disabled');
-        $body = ['model' => $settings['default_model'], 'max_tokens' => 2048, 'system' => $prompts[$task], 'messages' => [['role' => 'user', 'content' => json_encode(['task' => $task, 'context' => $context], JSON_THROW_ON_ERROR)]]];
+        $body = ['model' => $settings['default_model'], 'max_tokens' => 2048, 'temperature' => 0.2, 'system' => $prompts[$task], 'messages' => [['role' => 'user', 'content' => json_encode(['task' => $task, 'context' => $context], JSON_THROW_ON_ERROR)]]];
         $headers = ['Content-Type' => 'application/json; charset=utf-8', 'Accept' => 'application/json', 'anthropic-version' => '2023-06-01'];
         if ($this->replaySafePost) $headers['Idempotency-Key'] = bin2hex(random_bytes(16));
         $headers[$settings['auth_scheme'] === 'bearer' ? 'Authorization' : 'x-api-key'] = $settings['auth_scheme'] === 'bearer' ? 'Bearer ' . $credential : $credential;
@@ -139,7 +139,10 @@ final class AiSettingsRepository
         try {
             for ($attempt = 0; $attempt <= (int) $settings['max_retries']; $attempt++) {
                 if ($clock() >= $deadline) throw new RuntimeException('deadline_exceeded');
-                $resolved = $this->gateway->validateResolvedIps($url, fn (string $host): array => $this->resolver->resolve($host));
+                $remainingBeforeResolve = $deadline - $clock();
+                if ($remainingBeforeResolve <= 0) throw new RuntimeException('deadline_exceeded');
+                $dnsTimeout = max(1, min(10, (int) ceil($remainingBeforeResolve)));
+                $resolved = $this->gateway->validateResolvedIps($url, fn (string $host): array => $this->resolver->resolve($host, $dnsTimeout));
                 if (($resolved['status'] ?? 'invalid') !== 'ok') throw new RuntimeException('gateway_policy_rejected');
                 $remaining = $deadline - $clock();
                 if ($remaining <= 0) throw new RuntimeException('deadline_exceeded');
@@ -274,7 +277,7 @@ final class AiSettingsRepository
     }
 
     /** Encrypt a validated API key without returning plaintext to callers. */
-    private function encryptCredential(string $apiKey): array
+    private function encryptCredential(#[\SensitiveParameter] string $apiKey): array
     {
         if (!self::validApiKey($apiKey)) {
             throw new RuntimeException('invalid_api_key');
@@ -307,7 +310,7 @@ final class AiSettingsRepository
     }
 
     /** Decrypt only to establish configured status; plaintext never crosses this method boundary. */
-    private function decryptCredential(array $envelope): string
+    private function decryptCredential(#[\SensitiveParameter] array $envelope): string
     {
         $this->validateEnvelope($envelope);
         $key = $this->resolvedEncryptionKey();

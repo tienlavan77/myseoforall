@@ -85,7 +85,7 @@ final class IncrementGTest extends TestCase
         $captured = [];
         $resolver = new class implements GatewayResolver {
             // Resolve the fixture hostname to one public address without network access.
-            public function resolve(string $host): array { return ['1.1.1.1']; }
+            public function resolve(string $host, int $timeoutSeconds = 5): array { return ['1.1.1.1']; }
         };
         $transport = new class($captured) implements GatewayTransport {
             // Capture transport arguments so protocol construction can be asserted offline.
@@ -107,6 +107,7 @@ final class IncrementGTest extends TestCase
         self::assertSame('https://gw.example.test/v1/messages', $captured[0]);
         self::assertSame('application/json; charset=utf-8', $captured[1]['Content-Type']);
         self::assertSame('2023-06-01', $captured[1]['anthropic-version']);
+        self::assertSame(0.2, $captured[2]['temperature']);
         self::assertArrayHasKey('Idempotency-Key', $captured[1]);
         self::assertSame(['task' => 'seo_analysis', 'context' => ['type' => 'article']], json_decode($captured[2]['messages'][0]['content'], true));
         self::assertSame(5, $captured[3]);
@@ -120,7 +121,7 @@ final class IncrementGTest extends TestCase
         $transportCalls = 0;
         $resolver = new class($resolverCalls) implements GatewayResolver {
             public function __construct(private int &$calls) {}
-            public function resolve(string $host): array { $this->calls++; return ['1.1.1.1']; }
+            public function resolve(string $host, int $timeoutSeconds = 5): array { $this->calls++; return ['1.1.1.1']; }
         };
         $transport = new class($transportCalls) implements GatewayTransport {
             public function __construct(private int &$calls) {}
@@ -172,7 +173,7 @@ final class IncrementGTest extends TestCase
         putenv('MYSEO_AI_GATEWAY_API_KEY=sk-policy-test-123456');
         $transportCalls = 0;
         $resolver = new class implements GatewayResolver {
-            public function resolve(string $host): array { return ['1.1.1.1', '10.0.0.1']; }
+            public function resolve(string $host, int $timeoutSeconds = 5): array { return ['1.1.1.1', '10.0.0.1']; }
         };
         $transport = new class($transportCalls) implements GatewayTransport {
             public function __construct(private int &$calls) {}
@@ -197,7 +198,7 @@ final class IncrementGTest extends TestCase
         $clockValues = [100.0, 100.0, 100.0, 104.95];
         $clock = static function () use (&$clockValues): float { return array_shift($clockValues) ?? 104.95; };
         $resolver = new class implements GatewayResolver {
-            public function resolve(string $host): array { return ['1.1.1.1']; }
+            public function resolve(string $host, int $timeoutSeconds = 5): array { return ['1.1.1.1']; }
         };
         $transport = new class implements GatewayTransport {
             public function send(string $url, array $headers, array $body, int $timeout, array $ips): array { return ['status' => 429, 'body' => '{}', 'sent' => true]; }

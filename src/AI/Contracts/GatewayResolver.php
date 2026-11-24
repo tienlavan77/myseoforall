@@ -8,5 +8,5 @@ namespace MySeoForAll\AI\Contracts;
 interface GatewayResolver
 {
     /** @return list<string> */
-    public function resolve(string $host): array;
+    public function resolve(string $host, int $timeoutSeconds = 5): array;
 }

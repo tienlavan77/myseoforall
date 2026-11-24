@@ -20,7 +20,7 @@ final class GatewayAiProvider implements AiProvider
     public function name(): string { return 'gateway'; }
 
     /** Validate one request, execute it through the closed settings boundary, and return a schema-checked proposal. @param array<string,mixed> $request */
-    public function generate(array $request): array
+    public function generate(#[\SensitiveParameter] array $request): array
     {
         $this->validateRequest($request);
         $task = $request['task'];
@@ -42,7 +42,7 @@ final class GatewayAiProvider implements AiProvider
     }
 
     /** Validate the closed request envelope and provider payload before any settings or network work. @param array<string,mixed> $request */
-    private function validateRequest(array $request): void
+    private function validateRequest(#[\SensitiveParameter] array $request): void
     {
         $expected = ['schema_version', 'task', 'context'];
         if (array_diff(array_keys($request), $expected) !== [] || array_diff($expected, array_keys($request)) !== [] || $request['schema_version'] !== AiProvider::REQUEST_SCHEMA || !is_string($request['task']) || !is_array($request['context'])) { throw new AiProviderException(AiProviderException::MALFORMED_REQUEST, 'Provider request is malformed.'); }

@@ -8,5 +8,5 @@ namespace MySeoForAll\AI\Contracts;
 interface GatewayTransport
 {
     /** @param array<string,string> $headers @param array<string,mixed> $body @param list<string> $ips @return array{status:int,body:string,sent:bool} */
-    public function send(string $url, #[\SensitiveParameter] array $headers, array $body, int $timeout, array $ips): array;
+    public function send(string $url, #[\SensitiveParameter] array $headers, #[\SensitiveParameter] array $body, int $timeout, array $ips): array;
 }

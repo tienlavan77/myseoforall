@@ -8,21 +8,24 @@ use MySeoForAll\AI\Contracts\GatewayResolver;
 final class NativeGatewayResolver implements GatewayResolver
 {
     /** Return normalized IPv4 and IPv6 addresses from the platform resolver. */
-    public function resolve(string $host): array
+    public function resolve(string $host, int $timeoutSeconds = 5): array
     {
         if ($host === '' || !function_exists('dns_get_record')) {
             return [];
         }
-        if (function_exists('dns_get_record')) {
-            $previous = set_error_handler(static fn (): bool => true);
-            try { $records = dns_get_record($host, DNS_A | DNS_AAAA); } catch (\Throwable) { return []; } finally { if ($previous !== null) { restore_error_handler(); } }
-            $ips = [];
-            foreach (is_array($records) ? $records : [] as $record) {
-                if (is_string($record['ip'] ?? null)) { $ips[] = $record['ip']; }
-                if (is_string($record['ipv6'] ?? null)) { $ips[] = $record['ipv6']; }
-            }
-            return array_values(array_unique($ips));
+        $previous = set_error_handler(static fn (): bool => true);
+        try {
+            $records = dns_get_record($host, DNS_A | DNS_AAAA);
+        } catch (\Throwable) {
+            return [];
+        } finally {
+            restore_error_handler();
         }
-        return [];
+        $ips = [];
+        foreach (is_array($records) ? $records : [] as $record) {
+            if (is_string($record['ip'] ?? null)) { $ips[] = $record['ip']; }
+            if (is_string($record['ipv6'] ?? null)) { $ips[] = $record['ipv6']; }
+        }
+        return array_values(array_unique($ips));
     }
 }

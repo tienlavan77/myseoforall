@@ -22,15 +22,19 @@ final class CurlGatewayTransport implements GatewayTransport
      * @param list<string> $ips
      * @return array{status:int,body:string,sent:bool}
      */
-    public function send(string $url, #[\SensitiveParameter] array $headers, array $body, int $timeout, array $ips): array
+    public function send(string $url, #[\SensitiveParameter] array $headers, #[\SensitiveParameter] array $body, int $timeout, array $ips): array
     {
         if (!function_exists('curl_init') && $this->curlExecutor === null) {
             throw new \RuntimeException('transport_unavailable');
         }
 
         $parts = parse_url($url);
+        $scheme = is_array($parts) ? strtolower((string) ($parts['scheme'] ?? '')) : '';
         $host = is_array($parts) ? trim((string) ($parts['host'] ?? ''), '[]') : '';
         $port = is_array($parts) ? (int) ($parts['port'] ?? 443) : 443;
+        if ($scheme !== 'https' || $host === '') {
+            throw new \RuntimeException('gateway_policy_rejected');
+        }
         if ($port < 1 || $port > 65535) {
             throw new \RuntimeException('gateway_policy_rejected');
         }
