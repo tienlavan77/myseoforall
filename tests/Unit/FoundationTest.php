@@ -52,6 +52,8 @@ final class FoundationTest extends TestCase
         $plugin->boot();
 
         self::assertSame($firstHealth, $plugin->health());
-        self::assertCount(2, $firstHealth['modules']);
+        self::assertCount(4, $firstHealth['modules']);
+        self::assertSame(['admin', 'woocommerce', 'seo', 'rank_math'], array_column($firstHealth['modules'], 'name'));
+        self::assertFalse($plugin->health()['modules'][3]['write_allowed']);
     }
 }

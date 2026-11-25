@@ -76,13 +76,19 @@ final class SeoCoreTest extends TestCase
     {
         $status = (new RankMathDetector())->status(false);
 
-        self::assertFalse($status['installed']);
-        self::assertFalse($status['active']);
-        self::assertSame('unknown', $status['ownership']);
+        self::assertSame('unknown', $status['installation']);
+        self::assertSame('inactive', $status['activation']);
+        self::assertSame('unavailable', $status['version_state']);
+        self::assertSame('unknown', $status['compatibility']);
+        self::assertArrayNotHasKey('ownership', $status);
 
         $active = (new RankMathDetector())->status(true, '1.0.0');
-        self::assertSame('rank_math', $active['ownership']);
+        self::assertSame('unknown', $active['installation']);
+        self::assertSame('active', $active['activation']);
         self::assertSame('1.0.0', $active['version']);
+        self::assertSame('known', $active['version_state']);
+        self::assertSame('unknown', $active['compatibility']);
+        self::assertArrayNotHasKey('ownership', $active);
     }
 
     /** Verify the shared provider boundary rejects nested secrets and oversized values. */
@@ -130,13 +136,44 @@ final class SeoCoreTest extends TestCase
     public function testRankMathOwnershipRegistryRequiresExplicitState(): void
     {
         $registry = new \MySeoForAll\Integrations\RankMath\OwnershipRegistry();
-        $unknown = $registry->resolve(['active' => false, 'compatible' => false]);
-        $conflict = $registry->resolve(['active' => true, 'compatible' => true], ['rank_math', 'other_seo']);
+        $unknown = $registry->resolve(['active' => true, 'compatible' => true], ['rank_math']);
 
-        self::assertSame('unknown', $unknown['state']);
-        self::assertSame('unknown', $unknown['ownership']['title_meta']);
-        self::assertSame('conflict', $conflict['state']);
-        self::assertFalse($conflict['write_allowed']);
+        self::assertSame('unknown', $unknown['outputs']['title_meta']['owner']);
+        self::assertSame('unknown', $unknown['outputs']['title_meta']['state']);
+        self::assertSame('no_valid_claim', $unknown['outputs']['title_meta']['reason']);
+        self::assertSame('possible', $unknown['outputs']['title_meta']['duplicate_risk']);
+        self::assertFalse($unknown['outputs']['title_meta']['write_allowed']);
+        self::assertFalse($unknown['outputs']['ai_draft']['frontend_owned']);
+        self::assertFalse($unknown['outputs']['ai_draft']['publish_capability']);
+        self::assertFalse($unknown['write_allowed']);
+
+        $conflict = $registry->resolve([
+            'observations' => [
+                [
+                    'observation_id' => 'obs-rm-sitemap',
+                    'producer' => 'rank_math',
+                    'output' => 'sitemap',
+                    'assertion' => 'claim',
+                    'can_emit' => true,
+                    'source' => 'fixture:rm',
+                    'evidence_state' => 'observed',
+                ],
+                [
+                    'observation_id' => 'obs-other-sitemap',
+                    'producer' => 'other_seo',
+                    'output' => 'sitemap',
+                    'assertion' => 'claim',
+                    'can_emit' => true,
+                    'source' => 'fixture:other',
+                    'evidence_state' => 'observed',
+                ],
+            ],
+        ]);
+        self::assertSame('conflict', $conflict['outputs']['sitemap']['state']);
+        self::assertSame('blocked', $conflict['outputs']['sitemap']['duplicate_risk']);
+        self::assertSame('overlapping_claims', $conflict['outputs']['sitemap']['reason']);
+        self::assertSame('unknown', $conflict['outputs']['title_meta']['state']);
+        self::assertFalse($conflict['outputs']['sitemap']['write_allowed']);
     }
 
     /** Verify each supported resource keeps a builder-owned type and deterministic provenance. */
@@ -165,5 +202,156 @@ final class SeoCoreTest extends TestCase
 
         $this->expectException(\InvalidArgumentException::class);
         $builder->build(['type' => 'product'], 'article');
+    }
+
+    /** Verify URL, heading and link findings use bounded deterministic evidence. */
+    public function testAnalyzerValidatesUrlsHeadingsAndLinks(): void
+    {
+        $context = SeoContext::fromArray([
+            'title' => str_repeat('T', 30),
+            'meta_description' => str_repeat('M', 70),
+            'content' => '<h1>Main</h1><h2>Section</h2><h4>Skipped</h4><!-- <h1>fake</h1> -->',
+            'url' => 'https://example.test/item',
+            'canonical' => 'not-a-url',
+            'internal_links' => [
+                ['url' => 'https://other.test/page', 'anchor' => ''],
+            ],
+        ], 'post');
+
+        $findings = (new LocalSeoAnalyzer())->analyze($context);
+        $codes = array_column($findings, 'code');
+
+        self::assertContains('canonical_invalid', $codes);
+        self::assertContains('heading_hierarchy', $codes);
+        self::assertContains('internal_link_anchor_missing', $codes);
+        self::assertContains('internal_links_external_only', $codes);
+
+        foreach ($findings as $finding) {
+            self::assertSame(['code', 'severity', 'message', 'field', 'evidence', 'suggested_fix'], array_keys($finding));
+            self::assertIsNotString($finding['evidence']);
+        }
+    }
+
+    /** Verify offer and variation checks distinguish missing, invalid and conflicting data. */
+    /** Verify every analyzer finding code is covered by the deterministic registry. */
+    public function testAnalyzerFindingCodesAreRegistered(): void
+    {
+        $context = SeoContext::fromArray([
+            'content' => '<h1>Body</h1>',
+            'meta_description' => ['invalid'],
+        ], 'post');
+        $findings = (new LocalSeoAnalyzer())->analyze($context);
+        $reflection = new \ReflectionClass(LocalSeoAnalyzer::class);
+        $registered = array_keys($reflection->getConstant('CODE_ORDER'));
+        foreach ($findings as $finding) {
+            self::assertContains($finding['code'], $registered, $finding['code']);
+        }
+        self::assertContains('meta_description_invalid', $registered);
+    }
+
+    public function testAnalyzerChecksOfferAndVariationSemantics(): void
+    {
+        $context = SeoContext::fromArray([
+            'title' => str_repeat('T', 30),
+            'content' => '<h1>Product</h1>',
+            'id' => 5,
+            'sku' => 'SKU',
+            'price' => '10.00',
+            'stock' => 0,
+            'offer' => ['price' => '12.00', 'currency' => 'USD', 'availability' => 'in_stock'],
+            'variation' => ['id' => 4, 'parent_id' => 4],
+        ], 'variation');
+
+        $codes = array_column((new LocalSeoAnalyzer())->analyze($context), 'code');
+
+        self::assertContains('meta_description_missing', $codes);
+        self::assertContains('offer_mismatch', $codes);
+        self::assertContains('variation_relationship_invalid', $codes);
+        self::assertContains('variation_id_conflict', $codes);
+        self::assertNotContains('product_fields_missing', $codes);
+
+        $matching = SeoContext::fromArray([
+            'id' => 4,
+            'content' => '<h1>Product</h1>',
+            'sku' => 'SKU',
+            'price' => '10.00',
+            'stock' => 0,
+            'variation' => ['id' => 4, 'parent_id' => 9],
+        ], 'variation');
+        $matchingCodes = array_column((new LocalSeoAnalyzer())->analyze($matching), 'code');
+        self::assertNotContains('variation_id_conflict', $matchingCodes);
+    }
+
+    /** Verify Unicode title and meta lengths are measured as characters at inclusive boundaries. */
+    /** Verify product commerce fields distinguish missing values from invalid types and formats. */
+    public function testAnalyzerValidatesProductCommerceFieldTypes(): void
+    {
+        $context = SeoContext::fromArray([
+            'title' => str_repeat('T', 30),
+            'content' => '<h1>Product</h1>',
+            'sku' => 123,
+            'price' => '10.0x',
+            'stock' => '4',
+        ], 'product');
+
+        $codes = array_column((new LocalSeoAnalyzer())->analyze($context), 'code');
+
+        self::assertNotContains('product_fields_missing', $codes);
+        self::assertContains('product_fields_invalid', $codes);
+    }
+
+    public function testAnalyzerUsesUnicodeLengthBoundaries(): void
+    {
+        $title = str_repeat('ế', 30);
+        $meta = str_repeat('đ', 70);
+        $context = SeoContext::fromArray([
+            'title' => $title,
+            'meta_description' => $meta,
+            'content' => '<h1>Unicode</h1>',
+        ], 'post');
+
+        $codes = array_column((new LocalSeoAnalyzer())->analyze($context), 'code');
+
+        self::assertNotContains('title_length', $codes);
+        self::assertNotContains('meta_description_length', $codes);
+    }
+
+    /** Verify missing, null and invalid scalar types remain distinct analyzer outcomes. */
+    public function testAnalyzerInputContractDistinguishesNullAndInvalidTypes(): void
+    {
+        $missing = array_column((new LocalSeoAnalyzer())->analyze(SeoContext::fromArray([
+            'content' => '<h1>Body</h1>',
+        ], 'post')), 'code');
+        self::assertContains('title_missing', $missing);
+
+        $invalid = array_column((new LocalSeoAnalyzer())->analyze(SeoContext::fromArray([
+            'title' => ['bad'],
+            'meta_description' => ['bad'],
+            'content' => ['bad'],
+        ], 'post')), 'code');
+        self::assertContains('title_invalid', $invalid);
+        self::assertContains('meta_description_invalid', $invalid);
+        self::assertContains('content_invalid', $invalid);
+        self::assertNotContains('title_missing', $invalid);
+    }
+
+    /** Verify decimal strings compare canonically while invalid prices remain invalid. */
+    public function testAnalyzerUsesDecimalOfferPolicy(): void
+    {
+        $base = [
+            'title' => str_repeat('T', 30),
+            'content' => '<h1>Product</h1>',
+            'sku' => 'SKU',
+            'price' => '10.00',
+            'stock' => 0,
+            'offer' => ['price' => '10', 'currency' => 'USD', 'availability' => 'in_stock'],
+        ];
+        $matching = array_column((new LocalSeoAnalyzer())->analyze(SeoContext::fromArray($base, 'product')), 'code');
+        self::assertNotContains('offer_mismatch', $matching);
+
+        $invalid = $base;
+        $invalid['offer']['price'] = '-1.00';
+        $invalidCodes = array_column((new LocalSeoAnalyzer())->analyze(SeoContext::fromArray($invalid, 'product')), 'code');
+        self::assertContains('offer_invalid', $invalidCodes);
     }
 }

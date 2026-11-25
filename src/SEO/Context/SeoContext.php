@@ -22,7 +22,8 @@ final class SeoContext
         $allowed = [
             'id', 'title', 'content', 'excerpt', 'meta_description', 'url',
             'canonical', 'images', 'categories', 'tags', 'attributes', 'sku',
-            'price', 'stock', 'offer', 'variation', 'internal_links', 'seo',
+            'price', 'stock', 'currency', 'availability', 'offer', 'variation',
+            'internal_links', 'seo',
         ];
 
         $values = [

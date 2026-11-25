@@ -49,7 +49,9 @@ final class AiProviderTest extends TestCase
         self::assertSame($original, $request);
         self::assertSame(AiProvider::RESPONSE_SCHEMA, $first['schema_version']);
         self::assertSame('ok', $first['status']);
-        self::assertSame('A useful title', $first['output']['title']);
+        self::assertSame('title', $first['output']['target_field']);
+        self::assertSame('A useful title', $first['output']['value']);
+        self::assertSame('editor', $first['output']['provenance']);
     }
 
     /**
@@ -89,6 +91,44 @@ final class AiProviderTest extends TestCase
     }
 
     /**
+     * Verify malformed and unsupported requests expose distinct safe error categories.
+     */
+    public function testRequestErrorsExposeSafeCategories(): void
+    {
+        $provider = new FakeAiProvider();
+
+        $cases = [
+            [
+                'request' => [
+                    'schema_version' => AiProvider::REQUEST_SCHEMA,
+                    'task' => 'seo_analysis',
+                    'context' => [],
+                    'extra' => 'secret',
+                ],
+                'category' => \MySeoForAll\AI\Contracts\AiProviderException::MALFORMED_REQUEST,
+            ],
+            [
+                'request' => [
+                    'schema_version' => AiProvider::REQUEST_SCHEMA,
+                    'task' => 'unsupported',
+                    'context' => [],
+                ],
+                'category' => \MySeoForAll\AI\Contracts\AiProviderException::UNSUPPORTED_TASK,
+            ],
+        ];
+
+        foreach ($cases as $case) {
+            try {
+                $provider->generate($case['request']);
+                self::fail('Invalid provider request should be rejected.');
+            } catch (\MySeoForAll\AI\Contracts\AiProviderException $exception) {
+                self::assertSame($case['category'], $exception->category());
+                self::assertStringNotContainsString('secret', $exception->getMessage());
+            }
+        }
+    }
+
+    /**
      * Verify product drafts remain deterministic and explicitly avoid inventing commercial facts.
      */
     public function testProductDraftUsesAllowlistedContextOnly(): void
@@ -102,9 +142,10 @@ final class AiProviderTest extends TestCase
             ], 'product'),
         ]);
 
-        self::assertSame('Compact widget', $response['output']['description']);
-        self::assertSame('description', $response['output']['target_field']);
+        self::assertSame('Compact widget', $response['output']['content']);
+        self::assertSame('product', $response['output']['target']);
         self::assertSame('vi', $response['output']['language']);
+        self::assertSame('woocommerce', $response['output']['provenance']);
         self::assertFalse($response['output']['uses_commercial_facts']);
     }
 
@@ -123,9 +164,67 @@ final class AiProviderTest extends TestCase
             'context' => (new \MySeoForAll\SEO\Context\ProviderPayloadBuilder())->build(['title' => 'Title', 'content' => 'Body'], 'page'),
         ]);
 
-        self::assertSame([], $analysis['output']['findings']);
-        self::assertSame('vi', $analysis['output']['language']);
-        self::assertSame(['title', 'meta_description'], $suggestion['output']['target_fields']);
+        self::assertSame(['findings' => []], $analysis['output']);
+        self::assertSame('title', $suggestion['output']['target_field']);
+        self::assertSame('Title', $suggestion['output']['value']);
+        self::assertSame('editor', $suggestion['output']['provenance']);
         self::assertSame('vi', $suggestion['output']['language']);
+    }
+
+    /**
+     * Prove the provider cannot return a response when an injected boundary rejects it.
+     */
+    public function testInjectedValidatorIsCalledAndCanRejectResponse(): void
+    {
+        $calls = 0;
+        $validator = new class($calls) implements \MySeoForAll\AI\Contracts\AiOutputValidatorContract {
+            /** @var int */
+            private $calls;
+
+            /**
+             * Capture the external invocation counter used by the integration assertion.
+             * The reference lets the test observe the validator call without changing provider behavior.
+             */
+            public function __construct(&$calls)
+            {
+                $this->calls =& $calls;
+            }
+
+            /**
+             * Reject the generated response to prove the injected boundary controls delivery.
+             * The method increments the shared counter and throws the stable invalid-response category.
+             */
+            public function validate(array $response, ?string $expectedTask = null, ?string $expectedProvider = null): array
+            {
+                $this->calls++;
+                throw new \MySeoForAll\AI\Contracts\AiProviderException(
+                    \MySeoForAll\AI\Contracts\AiProviderException::INVALID_RESPONSE,
+                    'Injected validator rejected the response.'
+                );
+            }
+        };
+
+        $request = [
+            'schema_version' => AiProvider::REQUEST_SCHEMA,
+            'task' => 'seo_analysis',
+            'context' => (new \MySeoForAll\SEO\Context\ProviderPayloadBuilder())->build(
+                ['title' => 'Article', 'content' => 'Body'],
+                'article'
+            ),
+        ];
+        $original = $request;
+
+        try {
+            (new FakeAiProvider($validator))->generate($request);
+            self::fail('The injected validator must be authoritative.');
+        } catch (\MySeoForAll\AI\Contracts\AiProviderException $exception) {
+            self::assertSame(
+                \MySeoForAll\AI\Contracts\AiProviderException::INVALID_RESPONSE,
+                $exception->category()
+            );
+        }
+
+        self::assertSame(1, $calls);
+        self::assertSame($original, $request);
     }
 }

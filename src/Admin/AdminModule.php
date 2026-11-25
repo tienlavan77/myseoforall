@@ -10,6 +10,8 @@ declare(strict_types=1);
 
 namespace MySeoForAll\Admin;
 
+use MySeoForAll\AI\AiSettingsController;
+use MySeoForAll\AI\AiSettingsRepository;
 use MySeoForAll\Core\Configuration\Configuration;
 use MySeoForAll\Core\Contracts\Module;
 use MySeoForAll\Core\Environment\EnvironmentCheck;
@@ -21,11 +23,34 @@ final class AdminModule implements Module
     /**
      * Captures the configuration, environment checker, and option boundary owned by admin screens.
      */
+    private $healthProvider;
+    private ?\MySeoForAll\Core\HookDispatcher $dispatcher;
+    private $capabilityChecker;
+    private ?AiSettingsController $aiController;
+
+    /**
+     * Capture configuration, environment, options, and optional diagnostic wiring.
+     * The provider returns an already-redacted snapshot and is never used during settings persistence.
+     * @param Configuration $configuration
+     * @param EnvironmentCheck $environment
+     * @param OptionStore $options
+     * @param callable|null $healthProvider
+     * @param \MySeoForAll\Core\HookDispatcher|null $dispatcher
+     * @return void
+     */
     public function __construct(
         private Configuration $configuration,
         private EnvironmentCheck $environment,
-        private OptionStore $options
+        private OptionStore $options,
+        $healthProvider = null,
+        ?\MySeoForAll\Core\HookDispatcher $dispatcher = null,
+        ?callable $capabilityChecker = null,
+        ?AiSettingsController $aiController = null
     ) {
+        $this->aiController = $aiController;
+        $this->healthProvider = is_callable($healthProvider) ? $healthProvider : null;
+        $this->dispatcher = $dispatcher;
+        $this->capabilityChecker = $capabilityChecker;
     }
 
     /**
@@ -41,12 +66,17 @@ final class AdminModule implements Module
      */
     public function boot(): void
     {
-        if (! function_exists('add_action')) {
+        if ($this->dispatcher === null || !$this->dispatcher->canDispatch()) {
             return;
         }
 
-        add_action('admin_menu', [$this, 'registerMenu']);
-        add_action('admin_init', [$this, 'registerSettings']);
+        if ($this->dispatcher !== null) {
+            $this->dispatcher->addAction('admin_menu', [$this, 'registerMenu']);
+            $this->dispatcher->addAction('admin_init', [$this, 'registerSettings']);
+            if ($this->aiController !== null) {
+                $this->aiController->register($this->dispatcher);
+            }
+        }
     }
 
     /**
@@ -54,7 +84,7 @@ final class AdminModule implements Module
      */
     public function isAvailable(): bool
     {
-        return function_exists('add_action');
+        return $this->dispatcher !== null ? $this->dispatcher->canDispatch() : function_exists('add_action');
     }
 
     /**
@@ -68,6 +98,8 @@ final class AdminModule implements Module
             'name' => 'admin',
             'available' => $this->isAvailable(),
             'message' => $this->isAvailable() ? 'Settings và Health Check sẵn sàng.' : 'WordPress admin chưa sẵn sàng.',
+            'write_allowed' => false,
+            'frontend_owned' => false,
         ];
     }
 
@@ -124,27 +156,180 @@ final class AdminModule implements Module
      */
     public function renderPage(): void
     {
-        if (! function_exists('current_user_can') || ! current_user_can('manage_options')) {
+        $allowed = is_callable($this->capabilityChecker)
+            ? (($this->capabilityChecker)('manage_options') === true)
+            : (function_exists('current_user_can') && current_user_can('manage_options'));
+        if (!$allowed) {
             return;
         }
 
-        $statuses = $this->environment->evaluate();
-        echo '<div class="wrap"><h1>My SEO For All</h1>';
-        echo '<form method="post" action="options.php">';
-        echo '<p>Cấu hình nền tảng theo phạm vi site.</p>';
-        echo '<h2>Health Check</h2><ul>';
-        foreach ($statuses as $status) {
-            $name = function_exists('esc_html') ? esc_html((string) $status['name']) : (string) $status['name'];
-            $message = function_exists('esc_html') ? esc_html((string) $status['message']) : (string) $status['message'];
-            echo "<li><strong>{$name}</strong>: {$message}</li>";
+        $diagnostics = is_callable($this->healthProvider) ? ($this->healthProvider)() : [];
+        $statuses = is_array($diagnostics['environment'] ?? null)
+            ? $diagnostics['environment'] : $this->environment->evaluate();
+        $aiState = $this->aiController !== null ? $this->aiController->viewState() : [];
+
+        echo '<style id="myseo-for-all-admin-styles">'
+            . '.myseo-admin{max-width:1200px}.myseo-admin h1{font-weight:600;letter-spacing:-.01em}.myseo-admin__intro{color:#50575e;font-size:14px;line-height:1.6;margin:8px 0 24px;max-width:760px}'
+            . '.myseo-card{background:#fff;border:1px solid #dcdcde;border-radius:6px;box-shadow:0 1px 2px rgba(0,0,0,.04);margin:0 0 24px;padding:24px 28px}'
+            . '.myseo-card h2{font-size:18px;line-height:1.4;margin:0 0 8px;padding:0}.myseo-card__hint{color:#646970;line-height:1.55;margin:0 0 22px}'
+            . '.myseo-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px 28px}'
+            . '.myseo-field{display:flex;flex-direction:column;gap:7px;font-weight:600;color:#1d2327;line-height:1.4}'
+            . '.myseo-field input[type=text],.myseo-field input[type=url],.myseo-field input[type=password],.myseo-field input[type=number],.myseo-field select{box-sizing:border-box;max-width:none;width:100%}'
+            . '.myseo-field input:focus{border-color:#2271b1;box-shadow:0 0 0 1px #2271b1;outline:2px solid transparent}'
+            . '.myseo-field--check{display:flex;flex-direction:row;align-items:center;gap:8px;grid-column:1/-1;font-weight:600}'
+            . '.myseo-field--check input{margin:0}.myseo-field .description{color:#646970;font-weight:400;line-height:1.45;margin:0}'
+            . '.myseo-status{background:#f0f6fc;border:1px solid #c5d9ed;border-left:4px solid #2271b1;border-radius:2px;color:#1d2327;line-height:1.5;margin:22px 0 0;padding:11px 14px}.myseo-status[data-status=success]{background:#edfaef;border-color:#b7dfba;border-left-color:#16833a}.myseo-status[data-status=error]{background:#fcf0f1;border-color:#e0b8bc;border-left-color:#b32d2e}'
+            . '.myseo-health-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px;list-style:none;margin:0;padding:0}'
+            . '.myseo-health-grid li{background:#f6f7f7;border:1px solid #dcdcde;border-radius:4px;line-height:1.5;margin:0;padding:12px 14px}'
+            . '.myseo-health-grid strong{display:block;color:#1d2327;margin-bottom:3px;text-transform:capitalize}'
+            . '.myseo-admin .submit{margin:22px 0 0;padding:0}.myseo-admin .submit input{margin:0}'
+            . '.myseo-card--secondary{background:#f9f9f9}.myseo-card--secondary .submit{margin-top:16px}'
+            . '@media (max-width:782px){.myseo-fields,.myseo-health-grid{grid-template-columns:1fr}.myseo-card{padding:18px 16px}.myseo-admin__intro{margin-bottom:18px}}'
+            . '</style>';
+        echo '<div class="wrap myseo-admin"><h1>' . $this->escapeHtml('My SEO For All') . '</h1>';
+        echo '<p class="myseo-admin__intro">' . $this->escapeHtml('Cấu hình AI và theo dõi khả năng tương thích ngay trong khu vực quản trị WordPress.') . '</p>';
+        echo '<section class="myseo-card"><h2>' . $this->escapeHtml('AI settings') . '</h2>';
+        echo '<p class="myseo-card__hint">' . $this->escapeHtml('Các khóa bí mật không được hiển thị lại sau khi lưu.') . '</p>';
+        $aiStatus = isset($_GET['ai_status']) && is_scalar($_GET['ai_status']) ? (string) $_GET['ai_status'] : null;
+        $aiReason = isset($_GET['ai_reason']) && is_scalar($_GET['ai_reason']) ? (string) $_GET['ai_reason'] : null;
+        $invalidMessages = [
+            'invalid_base_url' => 'URL gateway không hợp lệ.', 'invalid_auth_scheme' => 'Auth scheme không hợp lệ.',
+            'invalid_settings_type' => 'Kiểu cấu hình không hợp lệ.', 'invalid_default_model' => 'Default model không hợp lệ.',
+            'invalid_model_id' => 'Allowed models chứa model không hợp lệ.', 'invalid_model_allowlist' => 'Danh sách Allowed models không hợp lệ hoặc vượt quá 20 model.',
+            'allowed_models' => 'Danh sách Allowed models không hợp lệ.', 'invalid_api_key' => 'API key không hợp lệ.',
+            'invalid_key_type' => 'Kiểu API key không hợp lệ.', 'clear_and_api_key' => 'Không thể vừa nhập API key mới vừa chọn xóa API key.',
+            'clear_api_key' => 'Yêu cầu xóa API key không hợp lệ.', 'invalid_limits' => 'Timeout hoặc retries nằm ngoài giới hạn cho phép.',
+            'timeout_seconds' => 'Timeout nằm ngoài giới hạn 5–60 giây.', 'max_retries' => 'Retries nằm ngoài giới hạn 0–2.',
+            'encryption_unavailable' => 'Môi trường chưa đủ khóa mã hóa để bảo vệ API key.', 'expected_revision' => 'Dữ liệu biểu mẫu không hợp lệ; hãy tải lại trang rồi thử lại.',
+            'request_type' => 'Dữ liệu biểu mẫu không hợp lệ; hãy tải lại trang rồi thử lại.', 'ai_enabled' => 'Dữ liệu biểu mẫu không hợp lệ; hãy tải lại trang rồi thử lại.',
+        ];
+        $corruptionReasons = ['', 'option_not_array', 'unknown_key', 'invalid_revision_or_schema', 'invalid_settings_type', 'invalid_limits', 'invalid_model_allowlist', 'invalid_model_id', 'invalid_default_model', 'invalid_base_url', 'invalid_credential_envelope'];
+        $bannerMessage = null;
+        if ($aiStatus === 'saved' && $aiReason === '') {
+            $bannerMessage = ['myseo-status--success', 'Đã lưu cấu hình AI.'];
+        } elseif ($aiStatus === 'invalid' && is_string($aiReason) && array_key_exists($aiReason, $invalidMessages)) {
+            $bannerMessage = ['myseo-status--error', $invalidMessages[$aiReason]];
+        } elseif (in_array($aiStatus, ['rejected_capability', 'rejected_nonce', 'revision_mismatch', 'read_only_environment', 'storage_failed'], true)) {
+            $pairs = [
+                'rejected_capability' => ['', 'capability', 'Bạn không có quyền thực hiện thao tác này.'],
+                'rejected_nonce' => ['', 'nonce', 'Phiên biểu mẫu không hợp lệ hoặc đã hết hạn; hãy tải lại trang rồi thử lại.'],
+                'revision_mismatch' => ['', 'revision_mismatch', 'Cấu hình đã thay đổi; hãy tải lại trang rồi thử lại.'],
+                'read_only_environment' => ['', 'read_only_environment', 'API key do môi trường quản lý và không thể thay đổi hoặc xóa tại đây.'],
+                'storage_failed' => ['', 'storage_failed', 'Không thể ghi cấu hình AI vào cơ sở dữ liệu.'],
+            ][$aiStatus];
+            if ($aiReason === $pairs[0] || $aiReason === $pairs[1]) $bannerMessage = ['myseo-status--error', $pairs[2]];
+        } elseif ($aiStatus === 'corrupted' && is_string($aiReason) && in_array($aiReason, $corruptionReasons, true)) {
+            $bannerMessage = ['myseo-status--error', 'Không thể đọc hoặc ghi đè cấu hình AI đang bị hỏng.'];
         }
-        echo '</ul>';
+        if ($bannerMessage !== null) {
+            $bannerType = $bannerMessage[0] === 'myseo-status--success' ? 'success' : 'error';
+            echo '<p class="myseo-status ' . $this->escapeHtml($bannerMessage[0]) . '" data-status="' . $this->escapeHtml($bannerType) . '">' . $this->escapeHtml($bannerMessage[1]) . '</p>';
+        }
+        echo '<form method="post" action="' . $this->escapeHtml(function_exists('admin_url') ? (string) admin_url('admin-post.php') : 'admin-post.php') . '">';
+        echo '<input type="hidden" name="action" value="myseo_save_ai_settings">';
+        echo '<input type="hidden" name="ai_enabled_present" value="1">';
+        echo '<input type="hidden" name="expected_revision" value="' . $this->escapeHtml((string) ($aiState['revision'] ?? 0)) . '">';
+        if (function_exists('wp_nonce_field')) {
+            wp_nonce_field('myseo_save_ai_settings');
+        }
+        echo '<div class="myseo-fields">';
+        echo '<label class="myseo-field myseo-field--check"><input type="checkbox" name="ai_enabled" value="1" ' . (($aiState['ai_enabled'] ?? false) === true ? 'checked' : '') . '> <span>AI enabled</span></label>';
+        echo '<label class="myseo-field"><span>Base URL</span><input type="url" name="base_url" value="' . $this->escapeHtml((string) ($aiState['base_url'] ?? '')) . '"></label>';
+        $authScheme = (string) ($aiState['auth_scheme'] ?? 'x_api_key');
+        echo '<label class="myseo-field"><span>Auth scheme</span><select name="auth_scheme"><option value="x_api_key" ' . ($authScheme === 'x_api_key' ? 'selected' : '') . '>x_api_key</option><option value="bearer" ' . ($authScheme === 'bearer' ? 'selected' : '') . '>bearer</option></select></label>';
+        echo '<label class="myseo-field"><span>Default model</span><input type="text" name="default_model" value="' . $this->escapeHtml((string) ($aiState['default_model'] ?? '')) . '"></label>';
+        echo '<label class="myseo-field"><span>Allowed models</span><input type="text" name="allowed_models" value="' . $this->escapeHtml(implode(',', is_array($aiState['allowed_models'] ?? null) ? $aiState['allowed_models'] : [])) . '"><small class="description">Phân tách bằng dấu phẩy; tối đa 20 model. Default model luôn được phép dùng.</small></label>';
+        echo '<label class="myseo-field"><span>Timeout (seconds)</span><input type="number" name="timeout_seconds" value="' . $this->escapeHtml((string) ($aiState['timeout_seconds'] ?? 20)) . '" min="5" max="60"></label>';
+        echo '<label class="myseo-field"><span>Retries</span><input type="number" name="max_retries" value="' . $this->escapeHtml((string) ($aiState['max_retries'] ?? 1)) . '" min="0" max="2"></label>';
+        $credentialStatus = (string) ($aiState['credential_status'] ?? 'unknown');
+        $credentialValue = in_array($credentialStatus, ['configured', 'environment'], true) ? AiSettingsRepository::API_KEY_MASK : '';
+        echo '<label class="myseo-field"><span>API key</span><input type="password" name="api_key" value="' . $this->escapeHtml($credentialValue) . '" autocomplete="new-password"><small class="description">Để trống hoặc giữ nguyên dấu chấm để giữ khóa hiện tại.</small></label>';
+        echo '<label class="myseo-field myseo-field--check"><input type="checkbox" name="clear_api_key" value="1"> <span>Xóa API key đã lưu</span><small class="description">Chỉ chọn khi muốn xóa vĩnh viễn khóa đã lưu trong cơ sở dữ liệu.</small></label>';
+        echo '<p class="myseo-card__hint">Credential status: ' . $this->escapeHtml($credentialStatus) . '</p>';
+        echo '</div>';
+        if (function_exists('submit_button')) {
+            submit_button('Lưu AI settings');
+        }
+        echo '</form></section>';
+        echo '<section class="myseo-card"><h2>' . $this->escapeHtml('Health Check') . '</h2>';
+        echo '<p class="myseo-card__hint">' . $this->escapeHtml('Trạng thái môi trường và các module được đọc từ runtime hiện tại.') . '</p>';
+        echo '<ul class="myseo-health-grid">';
+        foreach (['php', 'wordpress', 'woocommerce', 'mbstring'] as $key) {
+            $status = is_array($statuses[$key] ?? null) ? $statuses[$key] : [];
+            $label = $key;
+            $compatible = in_array($status['compatible'] ?? null, [true, false, 'unknown'], true)
+                ? $status['compatible'] : 'unknown';
+            $installation = in_array($status['installation'] ?? null, ['installed', 'absent', 'unknown'], true)
+                ? $status['installation'] : 'unknown';
+            $activation = in_array($status['activation'] ?? null, ['active', 'inactive', 'unknown'], true)
+                ? $status['activation'] : 'unknown';
+            $fallback = ($status['fallback'] ?? false) === true;
+            if ($compatible === false) {
+                $message = $key . ' chưa tương thích.';
+            } elseif ($key === 'mbstring' && ($fallback || $installation === 'absent')) {
+                $message = 'mbstring thiếu; đang dùng fallback UTF-8 deterministic.';
+            } elseif ($installation === 'unknown' || $activation === 'unknown' || $compatible === 'unknown') {
+                $message = $key . ' chưa đủ bằng chứng runtime.';
+            } elseif ($activation === 'inactive') {
+                $message = $key . ' đã cài nhưng chưa kích hoạt.';
+            } else {
+                $message = $key . ' sẵn sàng.';
+            }
+            echo '<li><strong>' . $this->escapeHtml($label) . '</strong>: '
+                . $this->escapeHtml($message) . '</li>';
+        }
+        foreach (['admin', 'woocommerce', 'seo', 'rank_math'] as $key) {
+            $module = [];
+            foreach (($diagnostics['modules'] ?? []) as $candidate) {
+                if (is_array($candidate) && ($candidate['name'] ?? null) === $key) {
+                    $module = $candidate;
+                    break;
+                }
+            }
+            $available = ($module['available'] ?? false) === true;
+            $message = $key === 'rank_math'
+                ? 'Rank Math chỉ được đọc thụ động; chưa chứng minh tương thích.'
+                : ($available ? $key . ' sẵn sàng.' : $key . ' chưa sẵn sàng.');
+            echo '<li><strong>' . $this->escapeHtml($key) . '</strong>: '
+                . $this->escapeHtml($message) . '</li>';
+        }
+        foreach (['title_meta', 'json_ld', 'sitemap', 'ai_draft'] as $output) {
+            $decision = is_array(($diagnostics['coexistence']['outputs'] ?? [])[$output] ?? null)
+                ? $diagnostics['coexistence']['outputs'][$output] : [];
+            $risk = in_array($decision['duplicate_risk'] ?? null, ['none', 'possible', 'blocked'], true)
+                ? $decision['duplicate_risk'] : 'possible';
+            $owner = in_array($decision['owner'] ?? null, [
+                'unknown', 'myseo_for_all', 'rank_math', 'yoast_seo', 'aioseo', 'seopress', 'the_seo_framework',
+            ], true) ? $decision['owner'] : 'unknown';
+            $state = in_array($decision['state'] ?? null, ['owned', 'unknown', 'conflict'], true)
+                ? $decision['state'] : 'unknown';
+            echo '<li><strong>' . $this->escapeHtml($output) . '</strong>: '
+                . $this->escapeHtml('owner=' . $owner . '; state=' . $state . '; duplicate_risk=' . $risk) . '</li>';
+        }
+        echo '</ul></section>';
+        echo '<section class="myseo-card myseo-card--secondary"><h2>' . $this->escapeHtml('Cấu hình plugin') . '</h2>';
+        echo '<p class="myseo-card__hint">' . $this->escapeHtml('Lưu các tùy chọn nền tảng của plugin theo phạm vi site.') . '</p>';
+        echo '<form method="post" action="' . $this->escapeHtml(function_exists('admin_url') ? (string) admin_url('options.php') : 'options.php') . '">';
         if (function_exists('settings_fields')) {
             settings_fields('myseo_for_all');
         }
         if (function_exists('submit_button')) {
             submit_button('Lưu cấu hình');
         }
-        echo '</form></div>';
+        echo '</form></section></div>';
+    }
+
+    /**
+     * Escape diagnostic text with WordPress escaping or a deterministic standalone fallback.
+     * The fallback always encodes quotes, substitutes invalid UTF-8, and never returns raw input.
+     * @param string $text
+     * @return string
+     */
+    private function escapeHtml(string $text): string
+    {
+        if (function_exists('esc_html')) {
+            return (string) esc_html($text);
+        }
+        return htmlspecialchars($text, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
     }
 }

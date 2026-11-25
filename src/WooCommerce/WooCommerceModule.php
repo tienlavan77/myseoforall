@@ -15,8 +15,26 @@ use MySeoForAll\Core\Contracts\Module;
 // Defines WooCommerceModule class behavior for WooCommerceModule.php.
 final class WooCommerceModule implements Module
 {
+    private ?\MySeoForAll\Core\HookDispatcher $dispatcher;
+    private $availabilityProbe;
+    private bool $lifecycleObserved = false;
+
     /**
-     * Registers no WooCommerce service until the dependency is active.
+     * Accept the optional composition services while preserving the foundation constructor contract.
+     * The dispatcher is used only for a named read-only lifecycle hook.
+     * @param \MySeoForAll\Core\HookDispatcher|null $dispatcher
+     * @return void
+     */
+    public function __construct(?\MySeoForAll\Core\HookDispatcher $dispatcher = null, ?callable $availabilityProbe = null)
+    {
+        $this->dispatcher = $dispatcher;
+        $this->availabilityProbe = $availabilityProbe;
+    }
+
+    /**
+     * Register the product reader when the SEO module has already composed it.
+     * No WooCommerce object is instantiated while the dependency is unavailable.
+     * @return void
      */
     public function register(): void
     {
@@ -28,13 +46,22 @@ final class WooCommerceModule implements Module
      */
     public function boot(): void
     {
-        if (! $this->isAvailable() || ! function_exists('add_action')) {
+        if (!$this->isAvailable() || $this->dispatcher === null || !$this->dispatcher->canDispatch()) {
             return;
         }
 
-        add_action('woocommerce_init', static function (): void {
-            // Product services will be attached by a later feature module.
-        });
+        if ($this->dispatcher !== null) {
+            $this->dispatcher->addAction('woocommerce_init', [$this, 'onWooCommerceInit']);
+        }
+    }
+
+    /**
+     * Mark the WooCommerce lifecycle as observed without reading or writing product data.
+     * @return void
+     */
+    public function onWooCommerceInit(): void
+    {
+        $this->lifecycleObserved = true;
     }
 
     /**
@@ -42,7 +69,9 @@ final class WooCommerceModule implements Module
      */
     public function isAvailable(): bool
     {
-        return class_exists('WooCommerce') || defined('WC_VERSION');
+        return is_callable($this->availabilityProbe)
+            ? (($this->availabilityProbe)() === true)
+            : (class_exists('WooCommerce') || defined('WC_VERSION'));
     }
 
     /**
@@ -57,6 +86,7 @@ final class WooCommerceModule implements Module
         return [
             'name' => 'woocommerce',
             'available' => $available,
+            'lifecycle_observed' => $this->lifecycleObserved,
             'message' => $available
                 ? 'WooCommerce sẵn sàng.'
                 : 'WooCommerce chưa được kích hoạt; tính năng sản phẩm chưa hoạt động.',

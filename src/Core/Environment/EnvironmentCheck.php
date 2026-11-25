@@ -13,6 +13,19 @@ namespace MySeoForAll\Core\Environment;
 // Defines EnvironmentCheck class behavior for EnvironmentCheck.php.
 final class EnvironmentCheck
 {
+    private $probe;
+
+    /**
+     * Accept an optional environment reader so tri-state behavior can be tested without platform globals.
+     * The default path remains passive and only calls guarded PHP or WordPress functions.
+     * @param callable|mixed|null $probe
+     * @return void
+     */
+    public function __construct($probe = null)
+    {
+        $this->probe = is_callable($probe) ? $probe : null;
+    }
+
     /**
      * Returns the minimum platform and optional WooCommerce dependency statuses.
      *
@@ -20,15 +33,25 @@ final class EnvironmentCheck
      */
     public function evaluate(): array
     {
+        if (is_callable($this->probe)) {
+            $provided = ($this->probe)();
+            if (is_array($provided)) {
+                return $this->normalizeProbe($provided);
+            }
+        }
+
         $phpCompatible = PHP_VERSION_ID >= 80000;
         $wordpressLoaded = function_exists('get_bloginfo');
         $woocommerceActive = class_exists('WooCommerce') || defined('WC_VERSION');
+        $mbstringLoaded = extension_loaded('mbstring');
 
         return [
             'php' => [
                 'name' => 'PHP',
                 'installed' => true,
                 'active' => true,
+                'installation' => 'installed',
+                'activation' => 'active',
                 'compatible' => $phpCompatible,
                 'version' => PHP_VERSION,
                 'message' => $phpCompatible ? 'PHP tương thích.' : 'Cần PHP 8.0 trở lên.',
@@ -37,21 +60,105 @@ final class EnvironmentCheck
                 'name' => 'WordPress',
                 'installed' => $wordpressLoaded,
                 'active' => $wordpressLoaded,
-                'compatible' => $wordpressLoaded,
+                'installation' => $wordpressLoaded ? 'installed' : 'unknown',
+                'activation' => $wordpressLoaded ? 'active' : 'unknown',
+                'compatible' => $wordpressLoaded ? true : 'unknown',
                 'version' => $wordpressLoaded ? (string) get_bloginfo('version') : null,
-                'message' => $wordpressLoaded ? 'WordPress sẵn sàng.' : 'WordPress chưa sẵn sàng.',
+                'message' => $wordpressLoaded ? 'WordPress sẵn sàng.' : 'WordPress chưa đủ bằng chứng runtime.',
             ],
             'woocommerce' => [
                 'name' => 'WooCommerce',
-                'installed' => $woocommerceActive,
+                'installed' => $woocommerceActive ? true : 'unknown',
                 'active' => $woocommerceActive,
-                'compatible' => $woocommerceActive,
+                'installation' => $woocommerceActive ? 'installed' : 'unknown',
+                'activation' => $woocommerceActive ? 'active' : 'unknown',
+                'compatible' => 'unknown',
                 'version' => $woocommerceActive && defined('WC_VERSION') ? WC_VERSION : null,
                 'message' => $woocommerceActive
-                    ? 'WooCommerce sẵn sàng.'
-                    : 'WooCommerce chưa được kích hoạt; tính năng sản phẩm đang tạm unavailable.',
+                    ? 'WooCommerce đã nạp nhưng chưa có bằng chứng tương thích.'
+                    : 'WooCommerce chưa được xác nhận; tính năng sản phẩm đang tạm unavailable.',
+            ],
+            'mbstring' => [
+                'name' => 'mbstring',
+                'installed' => $mbstringLoaded,
+                'active' => $mbstringLoaded,
+                'installation' => $mbstringLoaded ? 'installed' : 'absent',
+                'activation' => $mbstringLoaded ? 'active' : 'inactive',
+                'compatible' => true,
+                'version' => null,
+                'fallback' => !$mbstringLoaded,
+                'message' => $mbstringLoaded
+                    ? 'mbstring đang bật.'
+                    : 'mbstring thiếu; đang dùng fallback UTF-8 deterministic.',
             ],
         ];
+    }
+
+    /**
+     * Normalize an injected tri-state probe while preserving legacy boolean keys.
+     * @param array<string,mixed> $provided
+     * @return array<string,array<string,mixed>>
+     */
+    private function normalizeProbe(array $provided): array
+    {
+        $result = [];
+        foreach (['php', 'wordpress', 'woocommerce', 'mbstring'] as $name) {
+            $value = is_array($provided[$name] ?? null) ? $provided[$name] : [];
+            $installation = in_array($value['installation'] ?? null, ['installed', 'absent', 'unknown'], true)
+                ? $value['installation'] : 'unknown';
+            $activation = in_array($value['activation'] ?? null, ['active', 'inactive', 'unknown'], true)
+                ? $value['activation'] : 'unknown';
+            $compatible = in_array($value['compatible'] ?? null, [true, false, 'unknown'], true)
+                ? $value['compatible'] : 'unknown';
+            $rawVersion = $value['version'] ?? null;
+            $version = is_int($rawVersion) && $rawVersion > 0
+                ? (string) $rawVersion
+                : (is_string($rawVersion) ? trim($rawVersion) : null);
+            if ($version === '' || !is_string($version)
+                || preg_match('/^[0-9][A-Za-z0-9._+-]{0,31}$/', $version) !== 1) {
+                $version = null;
+            }
+
+            $result[$name] = [
+                'name' => $name,
+                'installed' => $installation === 'installed' ? true : ($installation === 'absent' ? false : 'unknown'),
+                'active' => $activation === 'active' ? true : ($activation === 'inactive' ? false : 'unknown'),
+                'installation' => $installation,
+                'activation' => $activation,
+                'compatible' => $compatible,
+                'version' => $version,
+                'message' => $this->statusMessage($name, $installation, $activation, $compatible),
+            ];
+            if ($name === 'mbstring') {
+                $result[$name]['fallback'] = $installation !== 'installed';
+            }
+        }
+        return $result;
+    }
+
+    /**
+     * Build a stable display message from normalized evidence rather than caller text.
+     * @param string $name
+     * @param string $installation
+     * @param string $activation
+     * @param bool|string $compatible
+     * @return string
+     */
+    private function statusMessage(string $name, string $installation, string $activation, $compatible): string
+    {
+        if ($compatible === false) {
+            return $name === 'php' ? 'PHP không tương thích.' : $name . ' chưa tương thích.';
+        }
+        if ($installation === 'unknown' || $activation === 'unknown' || $compatible === 'unknown') {
+            return $name . ' chưa đủ bằng chứng runtime.';
+        }
+        if ($name === 'mbstring' && $installation === 'absent') {
+            return 'mbstring thiếu; đang dùng fallback UTF-8 deterministic.';
+        }
+        if ($activation === 'inactive') {
+            return $name . ' đã cài nhưng chưa kích hoạt.';
+        }
+        return $name . ' sẵn sàng.';
     }
 
     /**
@@ -61,6 +168,11 @@ final class EnvironmentCheck
     {
         $statuses = $this->evaluate();
 
-        return $statuses['php']['compatible'] && $statuses['wordpress']['compatible'];
+        return $statuses['php']['installation'] === 'installed'
+            && $statuses['php']['activation'] === 'active'
+            && $statuses['php']['compatible'] === true
+            && $statuses['wordpress']['installation'] === 'installed'
+            && $statuses['wordpress']['activation'] === 'active'
+            && $statuses['wordpress']['compatible'] === true;
     }
 }
