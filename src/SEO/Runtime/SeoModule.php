@@ -105,7 +105,13 @@ final class SeoModule implements Module
         $this->container->set(WooCommerceProductReader::class, $productReader);
         $this->container->set(ContentSeoInspector::class, new ContentSeoInspector($contentReader));
         $this->container->set(ProductSeoInspector::class, new ProductSeoInspector($productReader));
-        $this->container->set(ApplyFingerprint::class, new ApplyFingerprint());
+        $fingerprint = null;
+        if (class_exists(ApplyFingerprint::class)) {
+            $fingerprint = $this->container->has(ApplyFingerprint::class)
+                ? $this->container->get(ApplyFingerprint::class)
+                : new ApplyFingerprint();
+            $this->container->set(ApplyFingerprint::class, $fingerprint);
+        }
         if (!$this->container->has(CanonicalSeoMetaRepository::class)) {
             $this->container->set(CanonicalSeoMetaRepository::class, new CanonicalSeoMetaRepository());
         }
@@ -116,9 +122,8 @@ final class SeoModule implements Module
             $this->container->set(ApplyToken::class, new ApplyToken(AUTH_KEY));
         }
         $applyToken = $this->container->has(ApplyToken::class) ? $this->container->get(ApplyToken::class) : null;
-        $fingerprint = $this->container->get(ApplyFingerprint::class);
         $resolver = null;
-        if ($applyToken !== null) {
+        if ($applyToken !== null && $fingerprint !== null) {
             $meta = $this->container->get(CanonicalSeoMetaRepository::class);
             $description = $this->container->get(WooCommerceDescriptionWriter::class);
             $fingerprint = $this->container->get(ApplyFingerprint::class);
