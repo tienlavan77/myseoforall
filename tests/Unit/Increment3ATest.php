@@ -101,6 +101,12 @@ final class Increment3ATest extends TestCase
         $this->editable = true;
         $html = $this->render($controller, (object) ['ID' => 1, 'post_type' => 'post']);
         self::assertStringContainsString('options-general.php?page=myseo-for-all', $html);
+        self::assertStringContainsString('myseo-for-all-metabox__ownership', $html);
+        self::assertStringContainsString('myseo-for-all-metabox__local-seo', $html);
+        self::assertStringContainsString('myseo-for-all-metabox__ai', $html);
+        self::assertStringContainsString('myseo-for-all-metabox__badge--warning', $html);
+        self::assertStringContainsString('myseo-for-all-metabox__finding-message', $html);
+        self::assertStringContainsString('myseo-for-all-metabox__finding-fix', $html);
         self::assertStringNotContainsString('<script>', $html);
         foreach (['Cần xử lý ngay: 0', 'Cảnh báo: 3', 'Gợi ý: 2', 'Thiếu meta description.'] as $finding) {
             self::assertStringContainsString($finding, $html);
@@ -124,6 +130,9 @@ final class Increment3ATest extends TestCase
         self::assertStringContainsString('&lt;script&gt;alert(1)&lt;/script&gt;', $product);
         self::assertStringNotContainsString($this->owner, $product);
         self::assertStringContainsString('Chỉ gửi các trường công khai:', $product);
+        self::assertStringContainsString('myseo-for-all-metabox__section-header', $product);
+        self::assertStringContainsString('myseo-for-all-metabox__actions', $product);
+        self::assertStringContainsString('myseo-for-all-metabox__preview-panel', $product);
         self::assertStringContainsString('data-task="product_description_draft"', $product);
 
         foreach ([$article, $page, $product] as $html) {

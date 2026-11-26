@@ -127,42 +127,73 @@ final class EditorPreviewController
         }
         $ownership = $this->ownership();
         echo '<div class="myseo-for-all-metabox" data-ajax-url="' . $this->escape($this->ajaxUrl()) . '" data-nonce="' . $this->escape($this->nonce()) . '" data-post-id="' . $postId . '">';
-        echo '<h3>' . $this->escape('Trạng thái Ownership / Coexistence') . '</h3><p>' . $this->escape($ownership['message']) . '</p>';
+        echo '<style>';
+        echo '.myseo-for-all-metabox{--myseo-border:#dcdcde;--myseo-muted:#646970;--myseo-blue:#2271b1;--myseo-warning:#996800;--myseo-danger:#b32d2e;color:#1d2327;font-size:13px;line-height:1.5}';
+        echo '.myseo-for-all-metabox__section{background:#fff;border:1px solid var(--myseo-border);border-radius:6px;margin:0 0 16px;padding:16px}';
+        echo '.myseo-for-all-metabox__section-header{align-items:center;display:flex;gap:8px;justify-content:space-between;margin-bottom:12px}';
+        echo '.myseo-for-all-metabox__title{font-size:14px;line-height:1.4;margin:0}';
+        echo '.myseo-for-all-metabox__description,.myseo-for-all-metabox__finding-fix{color:var(--myseo-muted)}';
+        echo '.myseo-for-all-metabox__counts,.myseo-for-all-metabox__actions{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}';
+        echo '.myseo-for-all-metabox__badge{border-radius:999px;font-size:12px;font-weight:600;padding:4px 10px}';
+        echo '.myseo-for-all-metabox__badge--blocker{background:#fbeaea;color:var(--myseo-danger)}';
+        echo '.myseo-for-all-metabox__badge--warning{background:#fff8e5;color:var(--myseo-warning)}';
+        echo '.myseo-for-all-metabox__badge--info{background:#eef6fc;color:#135e96}';
+        echo '.myseo-for-all-metabox__findings{list-style:none;margin:0;padding:0}';
+        echo '.myseo-for-all-metabox__finding{background:#f6f7f7;border-left:4px solid var(--myseo-blue);border-radius:4px;margin:8px 0;padding:10px 12px}';
+        echo '.myseo-for-all-metabox__finding--blocker{border-left-color:var(--myseo-danger)}';
+        echo '.myseo-for-all-metabox__finding--warning{border-left-color:var(--myseo-warning)}';
+        echo '.myseo-for-all-metabox__finding--info{border-left-color:var(--myseo-blue)}';
+        echo '.myseo-for-all-metabox__finding-meta{align-items:center;display:flex;flex-wrap:wrap;gap:8px}';
+        echo '.myseo-for-all-metabox__severity{font-size:11px;font-weight:700;text-transform:uppercase}';
+        echo '.myseo-for-all-metabox__field{color:#50575e;font-size:12px}';
+        echo '.myseo-for-all-metabox__finding-message,.myseo-for-all-metabox__finding-fix{margin:6px 0 0}';
+        echo '.myseo-for-all-metabox__finding-fix{font-size:12px}';
+        echo '.myseo-for-all-metabox__alert{border-left:4px solid var(--myseo-warning);border-radius:4px;margin-top:12px;padding:12px}';
+        echo '.myseo-for-all-metabox__alert--warning{background:#fff8e5;color:#5c4813}';
+        echo '.myseo-for-all-metabox__alert--error{background:#fbeaea;border-left-color:var(--myseo-danger);color:#7a2020}';
+        echo '.myseo-for-all-metabox__preview-panel{margin-top:16px}';
+        echo '@media (max-width:782px){.myseo-for-all-metabox__section{padding:12px}.myseo-for-all-metabox__section-header{align-items:flex-start;flex-direction:column}}';
+        echo '</style>';
+        echo '<section class="myseo-for-all-metabox__section myseo-for-all-metabox__ownership"><div class="myseo-for-all-metabox__section-header"><h3 class="myseo-for-all-metabox__title">' . $this->escape('Ownership / Coexistence') . '</h3><span class="myseo-for-all-metabox__status">' . $this->escape($ownership['message']) . '</span></div><p class="myseo-for-all-metabox__description">' . $this->escape($ownership['message']) . '</p></section>';
         $findings = is_array($inspection['findings'] ?? null) ? $inspection['findings'] : [];
         $counts = ['blocker' => 0, 'warning' => 0, 'info' => 0];
         foreach ($findings as $finding) if (is_array($finding) && isset($counts[$finding['severity'] ?? ''])) $counts[$finding['severity']]++;
-        echo '<p class="myseo-severity-counts">';
-        foreach (['blocker' => ['Cần xử lý ngay', '#b32d2e'], 'warning' => ['Cảnh báo', '#785000'], 'info' => ['Gợi ý', '#135e96']] as $severity => [$label, $color]) {
-            echo '<span style="color:' . $color . '">' . $label . ': ' . $counts[$severity] . '</span> ';
+        echo '<section class="myseo-for-all-metabox__section myseo-for-all-metabox__local-seo"><h3 class="myseo-for-all-metabox__title">Local SEO</h3><div class="myseo-for-all-metabox__counts" aria-label="Tóm tắt mức độ ưu tiên">';
+        foreach (['blocker' => 'Cần xử lý ngay', 'warning' => 'Cảnh báo', 'info' => 'Gợi ý'] as $severity => $label) {
+            echo '<span class="myseo-for-all-metabox__badge myseo-for-all-metabox__badge--' . $severity . '">' . $this->escape($label . ': ' . $counts[$severity]) . '</span> ';
         }
-        echo '</p>';
-        if ($findings === []) echo '<p>' . $this->escape('Không phát hiện vấn đề SEO cục bộ nào trên dữ liệu hiện tại.') . '</p>';
-        else {
-            echo '<ul>';
+        echo '</div>';
+        if ($findings === []) {
+            echo '<p class="myseo-for-all-metabox__description">' . $this->escape('Không phát hiện vấn đề SEO cục bộ nào trên dữ liệu hiện tại.') . '</p>';
+        } else {
+            echo '<ul class="myseo-for-all-metabox__findings">';
             foreach ($findings as $finding) {
                 if (!is_array($finding)) continue;
-                $text = (string) ($finding['severity'] ?? 'info') . ': ' . (string) ($finding['field'] ?? '') . ' — ' . (string) ($finding['message'] ?? '') . ' — ' . (string) ($finding['suggested_fix'] ?? '');
-                echo '<li>' . $this->escape($text) . '</li>';
+                $severity = in_array($finding['severity'] ?? null, ['blocker', 'warning', 'info'], true) ? $finding['severity'] : 'info';
+                $labels = ['blocker' => 'Cần xử lý ngay', 'warning' => 'Cảnh báo', 'info' => 'Gợi ý'];
+                echo '<li class="myseo-for-all-metabox__finding myseo-for-all-metabox__finding--' . $severity . '"><div class="myseo-for-all-metabox__finding-meta"><span class="myseo-for-all-metabox__severity">' . $this->escape($labels[$severity]) . '</span><code class="myseo-for-all-metabox__field">' . $this->escape((string) ($finding['field'] ?? '')) . '</code></div><p class="myseo-for-all-metabox__finding-message">' . $this->escape((string) ($finding['message'] ?? '')) . '</p><p class="myseo-for-all-metabox__finding-fix">' . $this->escape((string) ($finding['suggested_fix'] ?? '')) . '</p></li>';
             }
             echo '</ul>';
         }
+        echo '</section>';
         $loaded = $this->settings->load();
         $settings = is_array($loaded['settings'] ?? null) ? $loaded['settings'] : [];
         $ready = ($loaded['status'] ?? null) === 'ok' && ($settings['ai_enabled'] ?? false) === true && (string) ($settings['base_url'] ?? '') !== '' && (string) ($settings['default_model'] ?? '') !== '' && (($settings['allowed_models'] ?? []) === [] || in_array($settings['default_model'], $settings['allowed_models'], true)) && in_array($this->settings->credentialStatus()['status'] ?? null, ['configured', 'environment'], true);
+        echo '<section class="myseo-for-all-metabox__section myseo-for-all-metabox__ai"><h3 class="myseo-for-all-metabox__title">Trợ lý AI</h3>';
         if (!$ready) {
-            echo '<p>' . $this->escape('Trợ lý AI chưa được cấu hình đầy đủ.') . ' <a href="' . $this->escape($this->settingsUrl()) . '">' . $this->escape('Mở Cài đặt') . '</a></p>';
+            echo '<p class="myseo-for-all-metabox__alert myseo-for-all-metabox__alert--warning" role="status">' . $this->escape('Trợ lý AI chưa được cấu hình đầy đủ.') . ' <a href="' . $this->escape($this->settingsUrl()) . '">' . $this->escape('Mở Cài đặt') . '</a></p>';
         } elseif (($inspection['payload_status'] ?? null) !== 'accepted' || !is_array($inspection['provider_payload'] ?? null)) {
-            echo '<p>' . $this->escape('Dữ liệu nguồn hiện tại không vượt qua bộ lọc an toàn.') . '</p>';
+            echo '<p class="myseo-for-all-metabox__alert myseo-for-all-metabox__alert--warning" role="status">' . $this->escape('Dữ liệu nguồn hiện tại không vượt qua bộ lọc an toàn.') . '</p>';
         } else {
             $provenance = $inspection['provider_payload']['provenance'] ?? [];
             $fields = is_array($provenance) ? array_filter(
                 array_column($provenance, 'field'),
                 static fn ($field): bool => is_string($field) && $field !== ''
             ) : [];
-            echo '<p>' . $this->escape('Chỉ gửi các trường công khai: ' . implode(', ', $fields)) . '</p>';
+            echo '<p class="myseo-for-all-metabox__description">' . $this->escape('Chỉ gửi các trường công khai: ' . implode(', ', $fields)) . '</p><div class="myseo-for-all-metabox__actions">';
             foreach (['seo_analysis' => 'Phân tích SEO bằng AI', 'title_meta_suggestion' => 'Gợi ý Title/Meta'] as $task => $label) echo '<button type="button" class="button myseo-ai-preview" data-task="' . $this->escape($task) . '">' . $this->escape($label) . '</button> ';
             if ($resourceType === 'product') echo '<button type="button" class="button myseo-ai-preview" data-task="product_description_draft">' . $this->escape('Soạn nháp mô tả sản phẩm') . '</button>';
-            echo '<div class="myseo-ai-preview-panel" aria-live="polite"></div>';
+            echo '</div><div class="myseo-for-all-metabox__preview-panel myseo-ai-preview-panel" aria-live="polite"></div>';
             echo <<<'HTML'
 <script>
 (() => {
@@ -239,7 +270,7 @@ final class EditorPreviewController
 </script>
 HTML;
         }
-        echo '</div>';
+        echo '</section></div>';
     }
 
     /** Resolve post type without invoking an inspector. */
