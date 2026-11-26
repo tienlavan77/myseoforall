@@ -15,6 +15,11 @@ use MySeoForAll\Core\HookDispatcher;
 use MySeoForAll\Core\Container;
 use MySeoForAll\SEO\Analysis\LocalSeoAnalyzer;
 use MySeoForAll\SEO\Context\ProviderPayloadBuilder;
+use MySeoForAll\SEO\Runtime\ApplyController;
+use MySeoForAll\SEO\Runtime\ApplyFingerprint;
+use MySeoForAll\SEO\Runtime\ApplyToken;
+use MySeoForAll\SEO\Runtime\CanonicalSeoMetaRepository;
+use MySeoForAll\SEO\Runtime\WooCommerceDescriptionWriter;
 
 final class SeoModule implements Module
 {
@@ -96,6 +101,71 @@ final class SeoModule implements Module
         $this->container->set(WooCommerceProductReader::class, $productReader);
         $this->container->set(ContentSeoInspector::class, new ContentSeoInspector($contentReader));
         $this->container->set(ProductSeoInspector::class, new ProductSeoInspector($productReader));
+        $this->container->set(ApplyFingerprint::class, new ApplyFingerprint());
+        if (!$this->container->has(CanonicalSeoMetaRepository::class)) {
+            $this->container->set(CanonicalSeoMetaRepository::class, new CanonicalSeoMetaRepository());
+        }
+        if (!$this->container->has(WooCommerceDescriptionWriter::class)) {
+            $this->container->set(WooCommerceDescriptionWriter::class, new WooCommerceDescriptionWriter());
+        }
+        if (defined('AUTH_KEY') && is_string(AUTH_KEY) && AUTH_KEY !== '' && !$this->container->has(ApplyToken::class)) {
+            $this->container->set(ApplyToken::class, new ApplyToken(AUTH_KEY));
+        }
+        if ($this->container->has(ApplyToken::class)) {
+            $meta = $this->container->get(CanonicalSeoMetaRepository::class);
+            $description = $this->container->get(WooCommerceDescriptionWriter::class);
+            $fingerprint = $this->container->get(ApplyFingerprint::class);
+            $ownershipState = function (int $postId, string $resource, string $field): array {
+                $detectorClass = \MySeoForAll\Integrations\RankMath\RankMathDetector::class;
+                $registryClass = \MySeoForAll\Integrations\RankMath\OwnershipRegistry::class;
+                $detected = $this->container->has($detectorClass) ? $this->container->get($detectorClass)->detect() : [];
+                $resolved = $this->container->has($registryClass) ? $this->container->get($registryClass)->resolve() : [];
+                $decision = is_array($resolved) ? ($resolved['outputs']['title_meta'] ?? []) : [];
+                $activation = is_array($detected) && is_array($detected['activation'] ?? null)
+                    ? ($detected['activation']['state'] ?? null)
+                    : ($detected['activation'] ?? null);
+                $owner = is_string($decision['owner'] ?? null) ? $decision['owner'] : 'unknown';
+                $state = is_string($decision['state'] ?? null) ? $decision['state'] : 'unknown';
+                return [
+                    'active' => $activation === 'active',
+                    'owner' => $owner,
+                    'state' => $state,
+                    'requires_confirmation' => $activation === 'active' && $owner === 'rank_math' && $state === 'owned',
+                ];
+            };
+            $resolver = function (int $postId, string $resource, string $field, string $task = '') use ($meta, $description, $ownershipState): array {
+                if (!in_array($resource, ['article', 'page', 'product'], true)) return ['status' => 'unsupported_resource'];
+                if (($resource === 'product') !== ($field === 'description')) return ['status' => 'unsupported_field'];
+                if ($resource !== 'product' && !in_array($field, ['title', 'meta_description', 'canonical'], true)) return ['status' => 'unsupported_field'];
+                if ($resource !== 'product' && $task === 'product_description_draft') return ['status' => 'unsupported_task'];
+                if ($resource === 'product' && $task !== '' && $task !== 'product_description_draft') return ['status' => 'unsupported_task'];
+                if ($resource !== 'product' && $task !== '' && $task !== 'title_meta_suggestion') return ['status' => 'unsupported_task'];
+                $postType = $resource === 'article' ? 'post' : $resource;
+                if (function_exists('get_post_type')) {
+                    $actual = get_post_type($postId);
+                    if (!is_string($actual) || $actual !== $postType) return ['status' => 'not_found'];
+                }
+                $value = $resource === 'product' ? $description->read($postId) : $meta->read($postId, $field);
+                $ownership = $ownershipState($postId, $resource, $field);
+                return [
+                    'status' => 'ok',
+                    'snapshot' => [
+                        'version' => 1,
+                        'post_id' => $postId,
+                        'resource_type' => $resource,
+                        'task' => $task !== '' ? $task : ($resource === 'product' ? 'product_description_draft' : 'title_meta_suggestion'),
+                        'field' => $field,
+                        'value' => is_string($value) ? trim(str_replace(["\\r\\n", "\\r"], "\\n", $value)) : null,
+                        'ownership_state' => $ownership,
+                    ],
+                ];
+            };
+            $applyOwnership = function (int $postId, string $resource, string $field, string $fingerprint, array $snapshot = []) use ($ownershipState): array {
+                $state = $ownershipState($postId, $resource, $field);
+                return ['owned' => ($state['requires_confirmation'] ?? false) === true, 'confirmation_required' => ($state['requires_confirmation'] ?? false) === true];
+            };
+            $this->container->set(ApplyController::class, new ApplyController($this->container->get(ApplyToken::class), $fingerprint, $resolver, $this->capabilityChecker, null, $applyOwnership, $meta, $description));
+        }
         if ($this->container->has(\MySeoForAll\AI\Contracts\AiProvider::class)
             && $this->container->has(\MySeoForAll\AI\AiSettingsRepository::class)) {
             if (!class_exists(EditorPreviewController::class, false)) {
@@ -130,7 +200,11 @@ final class SeoModule implements Module
                             'owner' => $decision['owner'] ?? null,
                             'state' => $decision['state'] ?? null,
                         ];
-                    }
+                    },
+                    null,
+                    $this->container->get(ApplyToken::class),
+                    $fingerprint,
+                    $resolver
                 )
             );
         }
@@ -148,6 +222,9 @@ final class SeoModule implements Module
         $this->dispatcher->addAction('add_meta_boxes', [$this, 'registerDiagnosticsSurface'], 10, 2);
         if ($this->container->has(EditorPreviewController::class)) {
             $this->dispatcher->addAction('wp_ajax_myseo_ai_preview', [$this->container->get(EditorPreviewController::class), 'handleWordPressRequest'], 10, 1);
+        }
+        if ($this->container->has(ApplyController::class)) {
+            $this->dispatcher->addAction('wp_ajax_myseo_ai_apply', [$this->container->get(ApplyController::class), 'handleWordPressRequest'], 10, 1);
         }
     }
 

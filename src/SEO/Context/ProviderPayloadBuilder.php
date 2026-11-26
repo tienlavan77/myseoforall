@@ -11,7 +11,7 @@ namespace MySeoForAll\SEO\Context;
 final class ProviderPayloadBuilder
 {
     public const SCHEMA_VERSION = 'provider-payload-2';
-    private const SOURCES = ['wordpress', 'woocommerce', 'rank_math', 'editor'];
+    private const SOURCES = ['wordpress', 'woocommerce', 'rank_math', 'myseo_for_all', 'editor'];
 
     /**
      * @param array<string, mixed> $source

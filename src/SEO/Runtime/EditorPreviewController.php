@@ -23,9 +23,12 @@ final class EditorPreviewController
     private $resourceResolver;
     private $ownershipResolver;
     private $nonceFactory;
+    private $applyToken;
+    private $applyFingerprint;
+    private $applySnapshotResolver;
 
     /** Construct the read-only controller with platform, security, and optional display seams. */
-    public function __construct(AiProvider $aiProvider, AiSettingsRepository $settings, ContentSeoInspector $contentInspector, ProductSeoInspector $productInspector, $capabilityChecker = null, $nonceVerifier = null, $wooAvailability = null, $resourceResolver = null, $ownershipResolver = null, $nonceFactory = null)
+    public function __construct(AiProvider $aiProvider, AiSettingsRepository $settings, ContentSeoInspector $contentInspector, ProductSeoInspector $productInspector, $capabilityChecker = null, $nonceVerifier = null, $wooAvailability = null, $resourceResolver = null, $ownershipResolver = null, $nonceFactory = null, $applyToken = null, $applyFingerprint = null, $applySnapshotResolver = null)
     {
         $this->aiProvider = $aiProvider;
         $this->settings = $settings;
@@ -37,6 +40,9 @@ final class EditorPreviewController
         $this->resourceResolver = is_callable($resourceResolver) ? $resourceResolver : null;
         $this->ownershipResolver = is_callable($ownershipResolver) ? $ownershipResolver : null;
         $this->nonceFactory = is_callable($nonceFactory) ? $nonceFactory : null;
+        $this->applyToken = $applyToken;
+        $this->applyFingerprint = $applyFingerprint;
+        $this->applySnapshotResolver = is_callable($applySnapshotResolver) ? $applySnapshotResolver : null;
     }
 
     /** Validate the closed request contract and return a seven-key success or three-key error body. */
@@ -76,15 +82,55 @@ final class EditorPreviewController
                 'context' => $inspection['provider_payload'],
             ]);
             $response = (new \MySeoForAll\AI\Contracts\AiOutputValidator())->validate($response, $task, $this->aiProvider->name());
-            return ['http_status' => 200, 'body' => [
+            $current = $this->currentValues($inspection['provider_payload'], $resourceType);
+            $body = [
                 'status' => 'ok',
                 'post_id' => $postId,
                 'resource_type' => $resourceType,
                 'task' => $task,
-                'current' => $this->currentValues($inspection['provider_payload'], $resourceType),
+                'current' => $current,
                 'proposal' => $response['output'],
                 'read_only' => true,
-            ]];
+            ];
+            if ($task !== 'seo_analysis' && $this->applyToken !== null && $this->applyFingerprint !== null) {
+                $targetField = $task === 'product_description_draft'
+                    ? 'description'
+                    : (is_array($response['output']) && in_array(($response['output']['target_field'] ?? null), ['title', 'meta_description'], true)
+                        ? $response['output']['target_field']
+                        : null);
+                if ($targetField !== null) {
+                    $snapshot = null;
+                    if ($this->applySnapshotResolver !== null) {
+                        $resolved = ($this->applySnapshotResolver)($postId, $resourceType, $targetField, $task);
+                        $snapshot = is_array($resolved['snapshot'] ?? null) ? $resolved['snapshot'] : null;
+                    }
+                    if ($snapshot === null) {
+                        $snapshot = [
+                            'version' => 1,
+                            'post_id' => $postId,
+                            'resource_type' => $resourceType,
+                            'task' => $task,
+                            'field' => $targetField,
+                            'value' => $current[$targetField] ?? null,
+                        ];
+                    }
+                    $fingerprint = $this->applyFingerprint->fingerprint($snapshot);
+                    $proposalValue = is_array($response['output']) ? ($response['output']['value'] ?? ($response['output']['content'] ?? null)) : null;
+                    $body['source_fingerprint'] = $fingerprint;
+                    $body['apply_token'] = $this->applyToken->issue([
+                        'post_id' => $postId,
+                        'resource_type' => $resourceType,
+                        'task' => $task,
+                        'field' => $targetField,
+                        'value' => is_string($proposalValue) ? trim(str_replace(["\\r\\n", "\\r"], "\\n", $proposalValue)) : null,
+                        'fingerprint' => $fingerprint,
+                    ]);
+                    if (($snapshot['ownership_state']['requires_confirmation'] ?? false) === true) {
+                        $body['ownership_confirmation_required'] = true;
+                    }
+                }
+            }
+            return ['http_status' => 200, 'body' => $body];
         } catch (AiProviderException $exception) {
             return $this->providerError($exception->category());
         } catch (\Throwable) {
