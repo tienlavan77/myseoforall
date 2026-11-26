@@ -122,11 +122,20 @@ final class EditorPreviewController
                         'resource_type' => $resourceType,
                         'task' => $task,
                         'field' => $targetField,
-                        'value' => is_string($proposalValue) ? trim(str_replace(["\\r\\n", "\\r"], "\\n", $proposalValue)) : null,
+                        'value' => is_string($proposalValue) ? trim(str_replace(["\r\n", "\r"], "\n", $proposalValue)) : null,
                         'fingerprint' => $fingerprint,
                     ]);
                     if (($snapshot['ownership_state']['requires_confirmation'] ?? false) === true) {
                         $body['ownership_confirmation_required'] = true;
+                        $body['ownership_confirmation_token'] = $this->applyToken->issue([
+                            'purpose' => 'ownership_confirmation',
+                            'post_id' => $postId,
+                            'resource_type' => $resourceType,
+                            'task' => $task,
+                            'field' => $targetField,
+                            'fingerprint' => $fingerprint,
+                            'apply_token_hash' => hash('sha256', $body['apply_token']),
+                        ]);
                     }
                 }
             }
@@ -172,7 +181,7 @@ final class EditorPreviewController
             return;
         }
         $ownership = $this->ownership();
-        echo '<div class="myseo-for-all-metabox" data-ajax-url="' . $this->escape($this->ajaxUrl()) . '" data-nonce="' . $this->escape($this->nonce()) . '" data-post-id="' . $postId . '">';
+        echo '<div class="myseo-for-all-metabox" data-ajax-url="' . $this->escape($this->ajaxUrl()) . '" data-nonce="' . $this->escape($this->nonce()) . '" data-apply-nonce="' . $this->escape($this->applyNonce()) . '" data-post-id="' . $postId . '">';
         echo '<style>';
         echo '.myseo-for-all-metabox{--myseo-border:#dcdcde;--myseo-muted:#646970;--myseo-blue:#2271b1;--myseo-warning:#996800;--myseo-danger:#b32d2e;color:#1d2327;font-size:13px;line-height:1.5}';
         echo '.myseo-for-all-metabox__section{background:#fff;border:1px solid var(--myseo-border);border-radius:6px;margin:0 0 16px;padding:16px}';
@@ -298,14 +307,13 @@ final class EditorPreviewController
             append(proposed, 'p', value);
             const copy = append(panel, 'button', product ? 'Sao chép bản nháp' : 'Sao chép đề xuất');
             copy.type = 'button';
-            copy.addEventListener('click', async () => {
-                try {
-                    await navigator.clipboard.writeText(value);
-                    copy.textContent = 'Đã sao chép';
-                } catch {
-                    copy.textContent = 'Không thể sao chép tự động';
-                }
-            });
+            copy.addEventListener('click', async () => { try { await navigator.clipboard.writeText(value); copy.textContent = 'Đã sao chép'; } catch { copy.textContent = 'Không thể sao chép tự động'; } });
+            if (data.apply_token && data.source_fingerprint) {
+                let confirmBox = null;
+                if (data.ownership_confirmation_required) { const label = append(panel, 'label', ''); confirmBox = document.createElement('input'); confirmBox.type = 'checkbox'; label.appendChild(confirmBox); append(label, 'span', ' Tôi hiểu Rank Math đang quản lý SEO và xác nhận chỉ lưu vào dữ liệu chuẩn của My SEO For All.'); }
+                const apply = append(panel, 'button', product ? 'Áp dụng mô tả sản phẩm' : 'Áp dụng vào My SEO'); apply.type = 'button'; apply.className = 'button button-primary myseo-ai-apply';
+                apply.addEventListener('click', async () => { apply.disabled = true; const payload = {action:'myseo_ai_apply',post_id:box.dataset.postId,_ajax_nonce:box.dataset.applyNonce,resource_type:data.resource_type,task:data.task,field:product?'description':proposal.target_field,'proposal[value]': value, source_fingerprint:data.source_fingerprint,apply_token:data.apply_token}; if (!data.ownership_confirmation_required || (confirmBox && confirmBox.checked)) payload.confirmation = data.ownership_confirmation_token || ''; try { const res = await fetch(box.dataset.ajaxUrl,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/x-www-form-urlencoded; charset=UTF-8'},body:new URLSearchParams(payload)}); append(panel,'p',(await res.json()).message || 'Đã xử lý yêu cầu Apply.'); } catch { append(panel,'p','Không thể gửi yêu cầu Apply.'); } finally { apply.disabled = false; } });
+            }
         } catch {
             showError('Không thể tải bản xem trước.');
         } finally {
@@ -402,6 +410,9 @@ HTML;
 
     /** Return a nonce from the injected seam or WordPress. */
     private function nonce(): string { return $this->nonceFactory !== null ? (string) ($this->nonceFactory)('myseo_ai_preview') : (function_exists('wp_create_nonce') ? (string) wp_create_nonce('myseo_ai_preview') : ''); }
+
+    /** Return the Apply nonce from the injected seam or WordPress. */
+    private function applyNonce(): string { return $this->nonceFactory !== null ? (string) ($this->nonceFactory)('myseo_ai_apply') : (function_exists('wp_create_nonce') ? (string) wp_create_nonce('myseo_ai_apply') : ''); }
 
     /** Escape dynamic HTML text. */
     private function escape(string $value): string { return function_exists('esc_html') ? (string) esc_html($value) : htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); }

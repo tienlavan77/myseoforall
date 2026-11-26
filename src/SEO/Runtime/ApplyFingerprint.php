@@ -21,7 +21,7 @@ final class ApplyFingerprint
     private function canonicalize($value)
     {
         if (is_string($value)) {
-            return trim(str_replace(["\\r\\n", "\\r"], "\\n", $value));
+            return trim(str_replace(["\r\n", "\r"], "\n", $value));
         }
         if (!is_array($value)) {
             return $value;

@@ -45,11 +45,15 @@ final class ApplyController
 
         $proposal = $request['proposal'] ?? null;
         $value = is_array($proposal) ? ($proposal['value'] ?? ($proposal['content'] ?? null)) : null;
-        if (!is_string($value) || $value === '' || strlen($value) > 10000 || preg_match('/<[^>]*>|javascript:|[[:cntrl:]]/i', $value) === 1) {
+        if (!is_string($value)) return $this->error('invalid_proposal', 422, 'Đề xuất Apply không hợp lệ.');
+        $normalized = trim(str_replace(["\r\n", "\r"], "\n", $value));
+        $limit = $field === 'description' ? 2000 : ($field === 'canonical' ? 2048 : 300);
+        $singleLine = $field !== 'description';
+        $dangerous = $singleLine ? '/<[^>]*>|javascript:|[\x00-\x1F\x7F]/i' : '/<[^>]*>|javascript:|[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/i';
+        if ($normalized === '' || preg_match('//u', $normalized) !== 1 || preg_match($dangerous, $normalized) === 1 || ($singleLine && preg_match('/[\n\r\t]/', $normalized) === 1) || preg_match('/^.{1,' . $limit . '}$/us', $normalized) !== 1) {
             return $this->error('invalid_proposal', 422, 'Đề xuất Apply không hợp lệ.');
         }
-        $normalized = trim(str_replace(["\r\n", "\r"], "\n", $value));
-        if ($field === 'canonical' && filter_var($normalized, FILTER_VALIDATE_URL) === false || ($field === 'canonical' && !preg_match('#^https?://#i', $normalized))) {
+        if ($field === 'canonical' && (filter_var($normalized, FILTER_VALIDATE_URL) === false || !preg_match('#^https?://#i', $normalized))) {
             return $this->error('invalid_proposal', 422, 'Đề xuất Apply không hợp lệ.');
         }
         $fingerprint = $request['source_fingerprint'] ?? null;

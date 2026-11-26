@@ -66,6 +66,10 @@ final class SeoModule implements Module
 
         // Rank Math is registered after SEO; resolve its services lazily at read time.
         $seoOverrideResolver = function (int $objectId): array {
+            $canonical = $this->container->has(CanonicalSeoMetaRepository::class) ? $this->container->get(CanonicalSeoMetaRepository::class)->snapshot($objectId) : [];
+            $canonicalFields = [];
+            foreach ($canonical as $field => $value) if (is_string($value) && $value !== '') $canonicalFields[$field] = ['state' => 'value', 'value' => $value, 'source' => 'myseo_for_all'];
+            if ($canonicalFields !== []) return $canonicalFields;
             if (!$this->container->has(\MySeoForAll\Integrations\RankMath\RankMathReadAdapter::class)
                 || !$this->container->has(\MySeoForAll\Integrations\RankMath\RankMathDetector::class)
                 || !$this->container->has(\MySeoForAll\Integrations\RankMath\RankMathSourceObserver::class)) {
@@ -111,7 +115,10 @@ final class SeoModule implements Module
         if (defined('AUTH_KEY') && is_string(AUTH_KEY) && AUTH_KEY !== '' && !$this->container->has(ApplyToken::class)) {
             $this->container->set(ApplyToken::class, new ApplyToken(AUTH_KEY));
         }
-        if ($this->container->has(ApplyToken::class)) {
+        $applyToken = $this->container->has(ApplyToken::class) ? $this->container->get(ApplyToken::class) : null;
+        $fingerprint = $this->container->get(ApplyFingerprint::class);
+        $resolver = null;
+        if ($applyToken !== null) {
             $meta = $this->container->get(CanonicalSeoMetaRepository::class);
             $description = $this->container->get(WooCommerceDescriptionWriter::class);
             $fingerprint = $this->container->get(ApplyFingerprint::class);
@@ -155,7 +162,7 @@ final class SeoModule implements Module
                         'resource_type' => $resource,
                         'task' => $task !== '' ? $task : ($resource === 'product' ? 'product_description_draft' : 'title_meta_suggestion'),
                         'field' => $field,
-                        'value' => is_string($value) ? trim(str_replace(["\\r\\n", "\\r"], "\\n", $value)) : null,
+                        'value' => is_string($value) ? trim(str_replace(["\r\n", "\r"], "\n", $value)) : null,
                         'ownership_state' => $ownership,
                     ],
                 ];
@@ -202,7 +209,7 @@ final class SeoModule implements Module
                         ];
                     },
                     null,
-                    $this->container->get(ApplyToken::class),
+                    $applyToken,
                     $fingerprint,
                     $resolver
                 )
