@@ -181,6 +181,14 @@ final class EditorPreviewController
             return;
         }
         $ownership = $this->ownership();
+        $saved = $this->applySnapshotResolver !== null ? ($this->applySnapshotResolver)($postId) : [];
+        $saved = is_array($saved) ? $saved : [];
+        echo '<section class="myseo-for-all-metabox__saved-seo"><h3 class="myseo-for-all-metabox__title">Dữ liệu SEO đang lưu (My SEO For All)</h3><ul class="myseo-for-all-metabox__saved-list">';
+        foreach (['title' => 'SEO Title', 'meta_description' => 'Meta Description', 'canonical' => 'Canonical URL'] as $field => $label) {
+            $value = is_string($saved[$field] ?? null) && $saved[$field] !== '' ? $saved[$field] : 'Chưa thiết lập';
+            echo '<li class="myseo-for-all-metabox__saved-item" data-seo-field="' . $field . '"><span class="myseo-for-all-metabox__saved-label">' . $this->escape($label) . '</span><span class="myseo-for-all-metabox__saved-value">' . $this->escape($value) . '</span></li>';
+        }
+        echo '</ul></section>';
         echo '<div class="myseo-for-all-metabox" data-ajax-url="' . $this->escape($this->ajaxUrl()) . '" data-nonce="' . $this->escape($this->nonce()) . '" data-apply-nonce="' . $this->escape($this->applyNonce()) . '" data-post-id="' . $postId . '">';
         echo '<style>';
         echo '.myseo-for-all-metabox{--myseo-border:#dcdcde;--myseo-muted:#646970;--myseo-blue:#2271b1;--myseo-warning:#996800;--myseo-danger:#b32d2e;color:#1d2327;font-size:13px;line-height:1.5}';
@@ -206,8 +214,14 @@ final class EditorPreviewController
         echo '.myseo-for-all-metabox__alert{border-left:4px solid var(--myseo-warning);border-radius:4px;margin-top:12px;padding:12px}';
         echo '.myseo-for-all-metabox__alert--warning{background:#fff8e5;color:#5c4813}';
         echo '.myseo-for-all-metabox__alert--error{background:#fbeaea;border-left-color:var(--myseo-danger);color:#7a2020}';
-        echo '.myseo-for-all-metabox__preview-panel{margin-top:16px}';
-        echo '@media (max-width:782px){.myseo-for-all-metabox__section{padding:12px}.myseo-for-all-metabox__section-header{align-items:flex-start;flex-direction:column}}';
+        echo '.myseo-for-all-metabox__preview-panel{background:#f8f9fa;border:1px solid var(--myseo-border);border-radius:6px;margin-top:16px;padding:14px}';
+        echo '.myseo-for-all-metabox__preview-panel:empty{background:transparent;border:0;padding:0}';
+        echo '.myseo-for-all-metabox__loading{color:var(--myseo-muted);margin:0}';
+        echo '.myseo-for-all-metabox__saved-list{display:grid;gap:10px;grid-template-columns:repeat(3,minmax(0,1fr));list-style:none;margin:0;padding:0}';
+        echo '.myseo-for-all-metabox__saved-item{background:#fff;border:1px solid var(--myseo-border);border-radius:4px;padding:10px}.myseo-for-all-metabox__saved-item--empty{color:var(--myseo-muted)}';
+        echo '.myseo-for-all-metabox__saved-label{color:var(--myseo-muted);display:block;font-size:11px;font-weight:700;text-transform:uppercase}.myseo-for-all-metabox__saved-value{display:block;margin-top:4px;overflow-wrap:anywhere}';
+        echo '.myseo-for-all-metabox__compare{display:grid;gap:12px;grid-template-columns:repeat(2,minmax(0,1fr))}.myseo-for-all-metabox__compare-card{background:#fff;border:1px solid #dcdcde;border-radius:4px;padding:10px}.myseo-for-all-metabox__compare-card--proposed{background:#f0f6fc;border-color:#72aee6;border-left:3px solid #2271b1}.myseo-for-all-metabox__compare-card p{font-size:13.5px;line-height:1.55;margin:6px 0;white-space:pre-wrap;word-break:break-word}.myseo-for-all-metabox__preview-actions{align-items:center;display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}.myseo-for-all-metabox__confirm{align-items:flex-start;background:#fff8e5;border:1px solid #dba617;border-radius:4px;display:flex;gap:8px;margin-top:12px;padding:10px 12px}.myseo-for-all-metabox__alert--success{background:#edfaef;border-left-color:#00a32a;color:#14532d}.myseo-for-all-metabox__apply-feedback{margin-top:12px}';
+        echo '@media (max-width:782px){.myseo-for-all-metabox__section{padding:12px}.myseo-for-all-metabox__section-header{align-items:flex-start;flex-direction:column}.myseo-for-all-metabox__saved-list,.myseo-for-all-metabox__compare{grid-template-columns:1fr}}';
         echo '</style>';
         echo '<section class="myseo-for-all-metabox__section myseo-for-all-metabox__ownership"><div class="myseo-for-all-metabox__section-header"><h3 class="myseo-for-all-metabox__title">' . $this->escape('Ownership / Coexistence') . '</h3><span class="myseo-for-all-metabox__status">' . $this->escape($ownership['message']) . '</span></div><p class="myseo-for-all-metabox__description">' . $this->escape($ownership['message']) . '</p></section>';
         $findings = is_array($inspection['findings'] ?? null) ? $inspection['findings'] : [];
@@ -238,8 +252,18 @@ final class EditorPreviewController
         if (!$ready) {
             echo '<p class="myseo-for-all-metabox__alert myseo-for-all-metabox__alert--warning" role="status">' . $this->escape('Trợ lý AI chưa được cấu hình đầy đủ.') . ' <a href="' . $this->escape($this->settingsUrl()) . '">' . $this->escape('Mở Cài đặt') . '</a></p>';
         } elseif (($inspection['payload_status'] ?? null) !== 'accepted' || !is_array($inspection['provider_payload'] ?? null)) {
-            echo '<p class="myseo-for-all-metabox__alert myseo-for-all-metabox__alert--warning" role="status">' . $this->escape('Dữ liệu nguồn hiện tại không vượt qua bộ lọc an toàn.') . '</p>';
+            $messages = [
+                'missing_title' => 'Bài viết chưa có tiêu đề.',
+                'missing_content' => 'Bài viết chưa có nội dung để xem trước.',
+                'privacy_policy' => 'Dữ liệu nguồn chứa thông tin không được phép gửi tới AI.',
+                'payload_contract' => 'Dữ liệu nguồn chưa đáp ứng định dạng xem trước an toàn.',
+            ];
+            $message = $messages[$inspection['payload_reason'] ?? ''] ?? 'Dữ liệu nguồn hiện tại không vượt qua bộ lọc an toàn.';
+            echo '<p class="myseo-for-all-metabox__alert myseo-for-all-metabox__alert--warning" role="status">' . $this->escape($message) . '</p>';
         } else {
+            if (($inspection['payload_reason'] ?? null) === 'content_truncated_for_preview') {
+                echo '<p class="myseo-for-all-metabox__alert myseo-for-all-metabox__alert--warning" role="status">' . $this->escape('Nội dung dài đã được rút gọn an toàn cho bản xem trước AI.') . '</p>';
+            }
             $provenance = $inspection['provider_payload']['provenance'] ?? [];
             $fields = is_array($provenance) ? array_filter(
                 array_column($provenance, 'field'),
@@ -252,7 +276,8 @@ final class EditorPreviewController
             echo <<<'HTML'
 <script>
 (() => {
-    const box = document.currentScript.parentElement;
+    const box = document.currentScript ? document.currentScript.closest('.myseo-for-all-metabox') : null;
+    if (!box) return;
     const panel = box.querySelector('.myseo-ai-preview-panel');
     const buttons = box.querySelectorAll('.myseo-ai-preview');
     const append = (parent, tag, value) => {

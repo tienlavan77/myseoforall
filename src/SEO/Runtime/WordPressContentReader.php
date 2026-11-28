@@ -94,11 +94,18 @@ final class WordPressContentReader
         $payloadReason = null;
 
         try {
-            $payload = $this->builder->build(
-                $this->payloadSource($source),
-                $resourceType,
-                array_merge(['title' => 'wordpress', 'content' => 'wordpress'], $this->seoProvenance)
-            );
+            $projection = $this->previewProjection($source);
+            $payloadReason = $projection['reason'];
+            if (in_array($payloadReason, ['missing_title', 'missing_content', 'privacy_policy'], true)) {
+                $payloadStatus = 'rejected';
+                $payload = null;
+            } else {
+                $payload = $this->builder->build(
+                    $projection['source'],
+                    $resourceType,
+                    array_merge(['title' => 'wordpress', 'content' => 'wordpress'], $this->seoProvenance)
+                );
+            }
         } catch (\InvalidArgumentException $exception) {
             $payloadStatus = 'rejected';
             $payloadReason = $this->safeReason($exception);
@@ -153,6 +160,83 @@ final class WordPressContentReader
         }
 
         return $this->dropNulls($source);
+    }
+
+    /**
+     * Build a bounded text-only preview projection without mutating the local-analysis source.
+     * @param array<string,mixed> $source
+     * @return array{source:array<string,mixed>,reason:string|null}
+     */
+    private function previewProjection(array $source): array
+    {
+        $projection = $this->payloadSource($source);
+        foreach (['title', 'content', 'excerpt', 'meta_description'] as $field) {
+            if (isset($projection[$field]) && is_string($projection[$field])) {
+                $projection[$field] = $this->normalizePreviewText($projection[$field]);
+            }
+        }
+        foreach (['url', 'canonical'] as $urlField) {
+            if (isset($projection[$urlField]) && (!is_string($projection[$urlField]) || !$this->isPublicUrl($projection[$urlField]))) {
+                unset($projection[$urlField]);
+            }
+        }
+        foreach (['title', 'content', 'excerpt', 'meta_description'] as $field) {
+            if (isset($projection[$field]) && is_string($projection[$field]) && $this->containsPrivateText($projection[$field])) {
+                return ['source' => $projection, 'reason' => 'privacy_policy'];
+            }
+        }
+        $title = trim((string) ($projection['title'] ?? ''));
+        $content = trim((string) ($projection['content'] ?? ''));
+        if ($title === '') return ['source' => $projection, 'reason' => 'missing_title'];
+        if ($content === '') return ['source' => $projection, 'reason' => 'missing_content'];
+        $reason = null;
+        foreach (['content', 'excerpt', 'meta_description'] as $field) {
+            if (isset($projection[$field]) && is_string($projection[$field]) && $this->textLength($projection[$field]) > 2000) {
+                $projection[$field] = $this->truncateText($projection[$field], 2000);
+                $reason = 'content_truncated_for_preview';
+            }
+        }
+        return ['source' => $projection, 'reason' => $reason];
+    }
+
+    /** Normalize HTML/editor markup to bounded plain text without executing shortcode content. */
+    private function normalizePreviewText(string $value): string
+    {
+        $value = preg_replace('/<!--.*?-->/s', ' ', $value) ?? $value;
+        $value = preg_replace('/\\[[^\\]]*\\]/', ' ', $value) ?? $value;
+        $value = strip_tags($value);
+        $value = html_entity_decode($value, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $value = strip_tags($value);
+        $value = str_replace(["\r\n", "\r"], "\n", $value);
+        $value = preg_replace('/\\s+/u', ' ', $value) ?? $value;
+        return trim($value);
+    }
+
+    /** Return true when normalized text contains a provider-forbidden private value. */
+    private function containsPrivateText(string $value): bool
+    {
+        $decoded = $value;
+        for ($i = 0; $i < 3; $i++) {
+            $decoded = rawurldecode($decoded);
+        }
+        return preg_match('~https?://[^\s/?#]*@~i', $decoded) === 1
+            || preg_match('/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i', $decoded) === 1
+            || preg_match('/(?:api[_ -]?key|access[_ -]?token|refresh[_ -]?token|password|secret|token)\s*[=:]\s*\S+/i', $decoded) === 1
+            || preg_match('/\bBearer\s+\S+|\bsk-(?:ant-)?[A-Za-z0-9_-]{8,}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/i', $decoded) === 1
+            || preg_match('/(?:tel:|phone\s*[=:])\s*\+?[\d ()-]{7,}/i', $decoded) === 1
+            || preg_match('/\+\d[\d ()-]{8,}\d/', $decoded) === 1;
+    }
+
+    /** Count Unicode code points with a deterministic fallback when mbstring is unavailable. */
+    private function textLength(string $value): int
+    {
+        return function_exists('mb_strlen') ? mb_strlen($value, 'UTF-8') : preg_match_all('/./us', $value);
+    }
+
+    /** Truncate Unicode text without splitting a UTF-8 sequence. */
+    private function truncateText(string $value, int $limit): string
+    {
+        return function_exists('mb_substr') ? mb_substr($value, 0, $limit, 'UTF-8') : (preg_match_all('/./us', $value, $matches) && count($matches[0]) > $limit ? implode('', array_slice($matches[0], 0, $limit)) : $value);
     }
 
     /**
@@ -224,6 +308,20 @@ final class WordPressContentReader
             }
         }
         return $source;
+    }
+
+    /** Accept only public absolute HTTP URLs for provider projection without performing network access. */
+    private function isPublicUrl(string $value): bool
+    {
+        $parts = parse_url($value);
+        $host = strtolower((string) ($parts['host'] ?? ''));
+        return filter_var($value, FILTER_VALIDATE_URL) !== false
+            && is_array($parts)
+            && in_array(strtolower($parts['scheme'] ?? ''), ['http', 'https'], true)
+            && !isset($parts['user'], $parts['pass'])
+            && $host !== 'localhost'
+            && !str_ends_with($host, '.local')
+            && (!filter_var($host, FILTER_VALIDATE_IP) || filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) !== false);
     }
 
     /**

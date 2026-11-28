@@ -25,7 +25,7 @@ if (is_readable($autoload)) {
 }
 
 // Load the plugin's PSR-4 classes when a production package does not include Composer's vendor directory.
-if (!class_exists('MySeoForAll' . chr(92) . 'Core' . chr(92) . 'Plugin')) {
+if (!class_exists('MySeoForAll' . chr(92) . 'Core' . chr(92) . 'Plugin', false)) {
     spl_autoload_register(static function (string $class): void {
         $prefix = 'MySeoForAll' . chr(92);
         if (!str_starts_with($class, $prefix)) {

@@ -131,6 +131,9 @@ final class Increment3ATest extends TestCase
         self::assertStringNotContainsString($this->owner, $product);
         self::assertStringContainsString('Chỉ gửi các trường công khai:', $product);
         self::assertStringContainsString('myseo-for-all-metabox__section-header', $product);
+        foreach (['data-ajax-url=', 'data-nonce=', 'data-apply-nonce=', 'data-post-id='] as $attribute) {
+            self::assertStringContainsString($attribute, $product);
+        }
         self::assertStringContainsString('myseo-for-all-metabox__actions', $product);
         self::assertStringContainsString('myseo-for-all-metabox__preview-panel', $product);
         self::assertStringContainsString('data-task="product_description_draft"', $product);
@@ -143,6 +146,8 @@ final class Increment3ATest extends TestCase
             self::assertStringContainsString('data-task="seo_analysis"', $html);
             self::assertStringContainsString('data-task="title_meta_suggestion"', $html);
             self::assertStringContainsString('textContent', $html);
+            self::assertStringContainsString("closest('.myseo-for-all-metabox')", $html);
+            self::assertStringNotContainsString('document.currentScript.parentElement', $html);
             self::assertStringNotContainsString('.innerHTML', $html);
         }
         self::assertStringNotContainsString('data-task="product_description_draft"', $article);
@@ -184,9 +189,21 @@ final class Increment3ATest extends TestCase
             self::assertSame([], $this->requests, $code);
         }
         $this->gates = [];
-        $this->assertError($controller->handlePreviewRequest($this->request(5)), 422, 'payload_rejected');
+        $result = $controller->handlePreviewRequest($this->request(5));
+        self::assertSame(200, $result['http_status']);
+        self::assertSame('ok', $result['body']['status']);
         self::assertSame(['edit', 'nonce', 'type'], $this->gates);
         self::assertSame([['content', 5]], $this->reads);
+        self::assertCount(1, $this->requests);
+
+        $this->gates = [];
+        $this->reads = [];
+        $this->requests = [];
+        $rejected = $controller->handlePreviewRequest($this->request(6));
+        self::assertSame(422, $rejected['http_status']);
+        self::assertSame('payload_rejected', $rejected['body']['code']);
+        self::assertSame(['edit', 'nonce', 'type'], $this->gates);
+        self::assertSame([['content', 6]], $this->reads);
         self::assertSame([], $this->requests);
     }
 
@@ -314,7 +331,7 @@ final class Increment3ATest extends TestCase
             $this->reads[] = ['content', $id];
             return [
                 'id' => $id, 'post_type' => $id === 2 ? 'page' : 'post', 'title' => 'Title',
-                'content' => $id === 5 ? str_repeat('x', 50000) : 'Body',
+                'content' => $id === 5 ? str_repeat('x', 50000) : ($id === 6 ? str_repeat('safe ', 500) . ' email@example.com' : 'Body'),
             ] + ($id === 2 ? ['meta_description' => ''] : []);
         }));
         $products = new ProductSeoInspector(new WooCommerceProductReader(function (int $id): array {
@@ -361,7 +378,7 @@ final class Increment3ATest extends TestCase
             },
             function (int $id): ?string {
                 $this->gates[] = 'type';
-                return [1 => 'post', 2 => 'page', 3 => 'product', 4 => 'attachment', 5 => 'post'][$id] ?? null;
+                return [1 => 'post', 2 => 'page', 3 => 'product', 4 => 'attachment', 5 => 'post', 6 => 'post'][$id] ?? null;
             },
             fn (): array => ['rank_math_active' => $this->rankMathActive, 'owner' => $this->owner, 'state' => 'observed']
         ), $content, $products];

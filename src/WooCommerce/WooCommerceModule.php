@@ -18,6 +18,8 @@ final class WooCommerceModule implements Module
     private ?\MySeoForAll\Core\HookDispatcher $dispatcher;
     private $availabilityProbe;
     private bool $lifecycleObserved = false;
+    private $compatibilityDeclarer;
+    private string $pluginFile;
 
     /**
      * Accept the optional composition services while preserving the foundation constructor contract.
@@ -29,6 +31,8 @@ final class WooCommerceModule implements Module
     {
         $this->dispatcher = $dispatcher;
         $this->availabilityProbe = $availabilityProbe;
+        $this->compatibilityDeclarer = null;
+        $this->pluginFile = dirname(__DIR__, 2) . '/myseoforall.php';
     }
 
     /**
@@ -52,6 +56,20 @@ final class WooCommerceModule implements Module
 
         if ($this->dispatcher !== null) {
             $this->dispatcher->addAction('woocommerce_init', [$this, 'onWooCommerceInit']);
+            $this->dispatcher->addAction('before_woocommerce_init', [$this, 'declareHposCompatibility']);
+        }
+    }
+
+    /** Business purpose: declare HPOS compatibility at the WooCommerce lifecycle boundary. Technical behavior: call an injected seam or guarded FeaturesUtil API and fail closed when unavailable. */
+    public function declareHposCompatibility(): void
+    {
+        if (is_callable($this->compatibilityDeclarer)) {
+            ($this->compatibilityDeclarer)('custom_order_tables', $this->pluginFile, true);
+            return;
+        }
+        $class = '\\Automattic\\WooCommerce\\Utilities\\FeaturesUtil';
+        if (class_exists($class) && method_exists($class, 'declare_compatibility')) {
+            $class::declare_compatibility('custom_order_tables', $this->pluginFile, true);
         }
     }
 

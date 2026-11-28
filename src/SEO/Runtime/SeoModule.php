@@ -115,11 +115,43 @@ final class SeoModule implements Module
         if (!$this->container->has(CanonicalSeoMetaRepository::class)) {
             $this->container->set(CanonicalSeoMetaRepository::class, new CanonicalSeoMetaRepository());
         }
+        if (!$this->container->has(FrontendSeoEmitter::class)) {
+            $repository = $this->container->get(CanonicalSeoMetaRepository::class);
+            $this->container->set(FrontendSeoEmitter::class, new FrontendSeoEmitter(
+                $repository,
+                function (): array {
+                    $post = function_exists('get_post') ? get_post() : null;
+                    $type = function_exists('get_post_type') ? (string) get_post_type() : '';
+                    return ['post_id' => is_object($post) ? (int) ($post->ID ?? 0) : 0, 'post_type' => $type, 'status' => is_object($post) ? (string) ($post->post_status ?? '') : '', 'singular' => function_exists('is_singular') ? is_singular(['post', 'page', 'product']) : false, 'woo_available' => $this->wooAvailable()];
+                },
+                function (): array {
+                    $registry = \\MySeoForAll\\Integrations\\RankMath\\OwnershipRegistry::class;
+                    // \\MySeoForAll\\Integrations\\RankMath\\OwnershipRegistry::class;
+                    //\\MySeoForAll\\Integrations\\RankMath\\OwnershipRegistry::class;
+                    /*\\MySeoForAll\\Integrations\\RankMath\\OwnershipRegistry::class;
+                    if (!$this->container->has($registry)) return [];
+                    $resolved = $this->container->get($registry)->resolve();
+                    return is_array($resolved) ? ($resolved['outputs']['title_meta'] ?? []) : [];
+                },
+                function (): array {
+                    $detector = \\MySeoForAll\\Integrations\\RankMath\\RankMathDetector::class;
+                    // \\MySeoForAll\\Integrations\\RankMath\\RankMathDetector::class;
+                    //\\MySeoForAll\\Integrations\\RankMath\\RankMathDetector::class;
+                    return $this->container->has($detector) ? $this->container->get($detector)->detect() : ['activation' => null];
+                },
+                function (): array {
+                    if (!$this->container->has(\\MySeoForAll\\Core\\Configuration\\Configuration::class)) return [];
+                    return $this->container->get(\\MySeoForAll\\Core\\Configuration\\Configuration::class)->all();
+                },
+                static fn (): array => []
+            ));
+        }
         if (!$this->container->has(WooCommerceDescriptionWriter::class)) {
             $this->container->set(WooCommerceDescriptionWriter::class, new WooCommerceDescriptionWriter());
         }
-        if (defined('AUTH_KEY') && is_string(AUTH_KEY) && AUTH_KEY !== '' && !$this->container->has(ApplyToken::class)) {
-            $this->container->set(ApplyToken::class, new ApplyToken(AUTH_KEY));
+        $applySecret = $this->deploymentSecret();
+        if ($applySecret !== null && !$this->container->has(ApplyToken::class)) {
+            $this->container->set(ApplyToken::class, new ApplyToken($applySecret));
         }
         $applyToken = $this->container->has(ApplyToken::class) ? $this->container->get(ApplyToken::class) : null;
         $resolver = null;
@@ -232,6 +264,9 @@ final class SeoModule implements Module
             return;
         }
         $this->dispatcher->addAction('add_meta_boxes', [$this, 'registerDiagnosticsSurface'], 10, 2);
+        if ($this->container->has(FrontendSeoEmitter::class)) {
+            $this->container->get(FrontendSeoEmitter::class)->register($this->dispatcher);
+        }
         if ($this->container->has(EditorPreviewController::class)) {
             $this->dispatcher->addAction('wp_ajax_myseo_ai_preview', [$this->container->get(EditorPreviewController::class), 'handleWordPressRequest'], 10, 1);
         }
@@ -316,6 +351,21 @@ final class SeoModule implements Module
             && $this->wooAvailable() && $this->container->has(ProductSeoInspector::class)) {
             $this->container->get(ProductSeoInspector::class)->inspect($postId);
         }
+    }
+
+    /** Resolve the deployment secret for ApplyToken without introducing a predictable fallback. */
+    private function deploymentSecret(): ?string
+    {
+        if (defined('AUTH_KEY') && is_string(AUTH_KEY) && trim(AUTH_KEY) !== '') {
+            return AUTH_KEY;
+        }
+        if (function_exists('wp_salt')) {
+            $salt = wp_salt('auth');
+            if (is_string($salt) && trim($salt) !== '') {
+                return $salt;
+            }
+        }
+        return null;
     }
 
     /** Check whether commerce diagnostics can read WooCommerce products in this request. */

@@ -241,7 +241,7 @@ final class WooCommerceProductReader
         $payload = [
             'id' => $source['id'] ?? null,
             'product_name' => $source['product_name'] ?? '',
-            'description' => $source['description'] ?? ($source['short_description'] ?? ''),
+            'description' => $this->projectionText($source['description'] ?? ($source['short_description'] ?? '')),
             'short_description' => $source['short_description'] ?? null,
             'sku' => $source['sku'] ?? null,
             'price' => $this->priceValue($source),
@@ -258,6 +258,19 @@ final class WooCommerceProductReader
             ];
         }
         return $this->dropNulls($payload);
+    }
+
+    /** Business purpose: project product descriptions safely for provider payloads. Technical behavior: strip editor markup, normalize entities and whitespace, and bound text to 2,000 characters. */
+    private function projectionText(string $value): string
+    {
+        $value = preg_replace('/<!--.*?-->/s', ' ', $value) ?? $value;
+        $value = preg_replace('/\\[[^\\]]*\\]/', ' ', $value) ?? $value;
+        $value = strip_tags($value);
+        $value = html_entity_decode($value, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $value = strip_tags($value);
+        $value = preg_replace('/\\s+/u', ' ', $value) ?? $value;
+        if (function_exists('mb_substr')) return trim(mb_substr(trim($value), 0, 2000, 'UTF-8'));
+        return trim(substr(trim($value), 0, 2000));
     }
 
     /**
